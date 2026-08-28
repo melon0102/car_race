@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NativeActivity: plain framework theme (no AppCompat dependency) -->
+    <style name="Theme.Revolt" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
