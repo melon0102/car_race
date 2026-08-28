@@ -16,6 +16,3 @@ app/.cxx/
 # OS
 Thumbs.db
 .DS_Store
-
-# staged game data (regenerate: see README, copied from rvsource/PC/assets/final, lowercased)
-app/src/main/assets/gamedata/
