@@ -17,6 +17,7 @@
 
 #include <stddef.h>   // before game headers (long=int define, see windows.h)
 #include <math.h>
+#include <android/log.h>
 
 #include "revolt.h"
 #include "main.h"
@@ -81,12 +82,39 @@ void CRD_CpuInput(CTRL *Control)
     REAL lookahead = 384.0f + absSpeed * 0.3f;
     if (lookahead > 1536.0f) lookahead = 1536.0f;
 
-    REAL nodeDist;
-    AINODE *node = AIN_GetForwardNode(player, lookahead, &nodeDist);
-    if (!node)
-        node = AIN_GetForwardNode(player, 128.0f, &nodeDist);
-    if (!node)
+    // AIN_GetForwardNode is dead in this drop (AIN_NearestNode is commented
+    // out and always returns NULL). Instead start from CarAI.FinishDistNode —
+    // the nearest-node tracker UpdateCarFinishDist maintains every frame —
+    // and walk race-forward (= FinishDist decreasing, see UpdateCarFinishDist)
+    // until the node is a look-ahead length away from the car.
+    long idx = player->CarAI.FinishDistNode;
+    if (idx < 0 || idx >= AiNodeNum)
         return;
+    AINODE *node = &AiNode[idx];
+
+    for (long iter = 0; iter < 48; iter++) {
+        VEC toNode;
+        SubVector(&node->Centre, &car->Body->Centre.Pos, &toNode);
+        REAL nd2 = toNode.v[X] * toNode.v[X] + toNode.v[Y] * toNode.v[Y]
+                 + toNode.v[Z] * toNode.v[Z];
+        if (nd2 >= lookahead * lookahead)
+            break;
+
+        // neighbor with the biggest wrapped FinishDist drop is race-forward
+        AINODE *cand[4] = { node->Next[0], node->Next[1], node->Prev[0], node->Prev[1] };
+        AINODE *fwd = NULL;
+        REAL best = 0.0f;
+        for (long c = 0; c < 4; c++) {
+            if (!cand[c]) continue;
+            REAL delta = node->FinishDist - cand[c]->FinishDist;
+            if (delta > AiNodeTotalDist * 0.5f) delta -= AiNodeTotalDist;
+            else if (delta < -AiNodeTotalDist * 0.5f) delta += AiNodeTotalDist;
+            if (delta > best) { best = delta; fwd = cand[c]; }
+        }
+        if (!fwd)
+            break;
+        node = fwd;
+    }
     player->CarAI.CurNode = node;
 
     // target = the node's racing-line point (lerp across the track edges)
@@ -119,6 +147,15 @@ void CRD_CpuInput(CTRL *Control)
         Control->dy = -(CTRL_RANGE_MAX * 2 / 3);
     else
         Control->dy = -CTRL_RANGE_MAX;
+
+    // heartbeat to logcat (~every 2s at 60fps) so remote debugging can see us
+    static long sBeat = 0;
+    if ((sBeat++ % 120) == 0) {
+        __android_log_print(4 /*INFO*/, "revolt-ai",
+                            "cpu slot %ld: node %ld dx %d dy %d speed %.0f angle %.2f",
+                            slot, (long)(node - AiNode), (int)Control->dx,
+                            (int)Control->dy, (double)fwdSpeed, (double)angle);
+    }
 
     // stuck: throttle on but barely moving -> back out for a second
     if (absSpeed < 48.0f && Control->dy < 0) {
