@@ -100,6 +100,7 @@ add_library(revolt SHARED
     platform/gl_renderer.cpp
     platform/dx_replacement.cpp
     platform/android_input.cpp
+    platform/cpu_driver.cpp
     platform/debug_overlay.cpp
     platform/net_stub.cpp
     ${GAME_SOURCES}

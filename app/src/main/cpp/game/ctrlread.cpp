@@ -403,6 +403,13 @@ void CRD_InitPlayerControl(PLAYER *player, CTRL_TYPE CtrlType)
 		player->ctrlhandler = (CTRL_HANDLER)CRD_JoystickInput;
 		break;
 
+		case CTRL_TYPE_CPU:   // ANDROID_PORT: 1999 drop has no CPU AI — see platform/cpu_driver.cpp
+		{
+			extern void CRD_CpuInput(CTRL *Control);
+			player->ctrlhandler = (CTRL_HANDLER)CRD_CpuInput;
+		}
+		break;
+
 		case CTRL_TYPE_NONE:
 		break;
 

@@ -177,6 +177,7 @@ PLAYER *PLR_CreatePlayer(PLAYER_TYPE Type, CTRL_TYPE CtrlType, CAR_TYPE CarType,
 	}
 	else if (Type == PLAYER_CPU)
 	{
+		newplayer->conhandler = (CON_HANDLER)CON_LocalCarControl;   // ANDROID_PORT: CPU drives through the normal control path (cpu_driver.cpp)
 		newplayer->ownobj->aihandler = (AI_HANDLER)AI_CarAiHandler;
 		newplayer->ownobj->CollType = COLL_TYPE_CAR;
 		newplayer->ownobj->movehandler = (MOVE_HANDLER)MOV_MoveCarNew;
