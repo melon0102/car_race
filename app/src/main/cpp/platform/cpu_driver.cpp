@@ -38,6 +38,8 @@
 static REAL sStuckTime[MAX_NUM_PLAYERS];
 static REAL sReverseTime[MAX_NUM_PLAYERS];
 static REAL sAirTime[MAX_NUM_PLAYERS];
+static REAL sWrongWayTime[MAX_NUM_PLAYERS];
+static REAL sDirSign[MAX_NUM_PLAYERS];   // 0 = uninitialised, +1/-1 = race-direction sense
 
 void CRD_CpuInput(CTRL *Control)
 {
@@ -55,6 +57,8 @@ void CRD_CpuInput(CTRL *Control)
     long slot = (long)(player - Players);
     if (slot < 0 || slot >= MAX_NUM_PLAYERS)
         return;
+    if (sDirSign[slot] == 0.0f)
+        sDirSign[slot] = 1.0f;
 
     REAL fwdSpeed = VecDotVec(&car->Body->Centre.Vel, &car->Body->Centre.WMatrix.mv[L]);
     REAL absSpeed = (fwdSpeed < 0) ? -fwdSpeed : fwdSpeed;
@@ -100,16 +104,24 @@ void CRD_CpuInput(CTRL *Control)
         if (nd2 >= lookahead * lookahead)
             break;
 
-        // neighbor with the biggest wrapped FinishDist drop is race-forward
+        // race-forward at this node, from the same construction as the game's
+        // wrong-way check (UpdateCarFinishDist): norm = (-RVec.z, RVec.y,
+        // RVec.x) points AGAINST the race direction, so forward is -norm
+        VEC fwdDir;
+        fwdDir.v[X] = node->RVec.v[Z] * sDirSign[slot];
+        fwdDir.v[Y] = -node->RVec.v[Y] * sDirSign[slot];
+        fwdDir.v[Z] = -node->RVec.v[X] * sDirSign[slot];
+
+        // neighbor that advances furthest along the race direction
         AINODE *cand[4] = { node->Next[0], node->Next[1], node->Prev[0], node->Prev[1] };
         AINODE *fwd = NULL;
         REAL best = 0.0f;
         for (long c = 0; c < 4; c++) {
             if (!cand[c]) continue;
-            REAL delta = node->FinishDist - cand[c]->FinishDist;
-            if (delta > AiNodeTotalDist * 0.5f) delta -= AiNodeTotalDist;
-            else if (delta < -AiNodeTotalDist * 0.5f) delta += AiNodeTotalDist;
-            if (delta > best) { best = delta; fwd = cand[c]; }
+            VEC step;
+            SubVector(&cand[c]->Centre, &node->Centre, &step);
+            REAL along = VecDotVec(&step, &fwdDir);
+            if (along > best) { best = along; fwd = cand[c]; }
         }
         if (!fwd)
             break;
@@ -131,6 +143,15 @@ void CRD_CpuInput(CTRL *Control)
     REAL angle = (REAL)atan2f(right, fwd);   // 0 = dead ahead, + = to the right
     REAL absAngle = (angle < 0) ? -angle : angle;
 
+    // target essentially behind us: three-point turn — reverse with mirrored
+    // steering so the nose swings toward the target (skip stuck logic; this
+    // IS the recovery)
+    if (absAngle > 2.2f) {
+        Control->dx = (signed char)((angle > 0) ? -CTRL_RANGE_MAX : CTRL_RANGE_MAX);
+        Control->dy = CTRL_RANGE_MAX;   // reverse
+        return;
+    }
+
     // steering: full lock when ~35 degrees off the line
     REAL steer = angle * (127.0f / 0.6f);
     if (steer > 127.0f) steer = 127.0f;
@@ -138,15 +159,31 @@ void CRD_CpuInput(CTRL *Control)
     Control->dx = (signed char)(long)steer;
 
     // throttle: flat out on the straights, ease through corners,
-    // brake when the target is way off the nose
-    if (absAngle > 1.4f)
-        Control->dy = CTRL_RANGE_MAX / 2;             // brake
-    else if (absAngle > 0.7f)
-        Control->dy = -(CTRL_RANGE_MAX / 3);
-    else if (absAngle > 0.35f)
-        Control->dy = -(CTRL_RANGE_MAX * 2 / 3);
+    // creep at full lock when the target is far off the nose
+    if (absAngle > 1.0f)
+        Control->dy = -(CTRL_RANGE_MAX / 4);
+    else if (absAngle > 0.5f)
+        Control->dy = -(CTRL_RANGE_MAX / 2);
+    else if (absAngle > 0.25f)
+        Control->dy = -(CTRL_RANGE_MAX * 3 / 4);
     else
         Control->dy = -CTRL_RANGE_MAX;
+
+    // self-calibration: if the game's own wrong-way detector says we're
+    // persistently racing backwards while driving forward at speed, our
+    // direction sense is inverted for this track — flip it
+    if (player->CarAI.WrongWay && fwdSpeed > 200.0f) {
+        sWrongWayTime[slot] += TimeStep;
+        if (sWrongWayTime[slot] > 1.5f) {
+            sWrongWayTime[slot] = 0.0f;
+            sDirSign[slot] = -sDirSign[slot];
+            __android_log_print(4 /*INFO*/, "revolt-ai",
+                                "cpu slot %ld: wrong way — flipping direction sense to %.0f",
+                                slot, (double)sDirSign[slot]);
+        }
+    } else {
+        sWrongWayTime[slot] = 0.0f;
+    }
 
     // heartbeat to logcat (~every 2s at 60fps) so remote debugging can see us
     static long sBeat = 0;
