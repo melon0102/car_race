@@ -139,9 +139,10 @@ extern "C" void DbgOverlayDraw(int width, int height)
     float lineH = 9 * px;
     float x = 4 * px, y = 4 * px;
 
+    extern int NActiveSparks;   // game particle count (Spark.cpp)
     char status[DBG_COLS];
-    snprintf(status, sizeof(status), "FRM %d  DRW %d  TEX %d",
-             sFrameCount, sDrawCallsLast, sTexUploads);
+    snprintf(status, sizeof(status), "FRM %d  DRW %d  TEX %d  SPK %d",
+             sFrameCount, sDrawCallsLast, sTexUploads, NActiveSparks);
     DrawString(x, y, px, status, 0xff00ff40);
     y += lineH;
 

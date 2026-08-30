@@ -1425,6 +1425,8 @@ void FireworkExplode(OBJECT *obj)
 		obj->Light->z = obj->body.Centre.Pos.v[Z];
 	}
 
+	DbgPrintf("BANG SPARKS=%d", NActiveSparks);   // ANDROID_PORT: diagnose invisible explosion particles
+
 	// ANDROID_PORT: the 1999 drop's explosion was cosmetic only — actually
 	// knock cars caught in the blast (impulse away from the bang, plus lift)
 	{
