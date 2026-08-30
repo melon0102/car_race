@@ -83,26 +83,42 @@ void CRD_CpuInput(CTRL *Control)
         return;
     }
 
-    // look-ahead point on the racing line, further ahead the faster we go
-    REAL lookahead = 384.0f + absSpeed * 0.3f;
-    if (lookahead > 1536.0f) lookahead = 1536.0f;
+    // look-ahead point on the racing line (short enough to actually follow
+    // the line through corners, like the retail AI)
+    REAL lookahead = 256.0f + absSpeed * 0.25f;
+    if (lookahead > 1024.0f) lookahead = 1024.0f;
+    // corner scan window: how far ahead we look for authored slow zones —
+    // grows with speed so braking starts early enough (retail
+    // CAI_CalcBrakingParameters: brake point moves up for slower corners)
+    REAL brakeWindow = 400.0f + absSpeed * 0.8f;
 
     // AIN_GetForwardNode is dead in this drop (AIN_NearestNode is commented
     // out and always returns NULL). Instead start from CarAI.FinishDistNode —
     // the nearest-node tracker UpdateCarFinishDist maintains every frame —
-    // and walk race-forward (= FinishDist decreasing, see UpdateCarFinishDist)
-    // until the node is a look-ahead length away from the car.
+    // and walk race-forward, collecting the slowest authored racing-line
+    // speed inside the braking window and the steering node at look-ahead.
     long idx = player->CarAI.FinishDistNode;
     if (idx < 0 || idx >= AiNodeNum)
         return;
     AINODE *node = &AiNode[idx];
+    AINODE *steerNode = NULL;
+    REAL walked = 0.0f;
+    REAL minFrac = 1.0f;
 
-    for (long iter = 0; iter < 48; iter++) {
+    for (long iter = 0; iter < 64; iter++) {
+        // authored per-node corner speed, 0..MAX_AINODE_SPEED (0 = unauthored)
+        if (node->RacingLineSpeed > 0 && walked <= brakeWindow) {
+            REAL frac = (REAL)node->RacingLineSpeed / (REAL)MAX_AINODE_SPEED;
+            if (frac < minFrac) minFrac = frac;
+        }
+
         VEC toNode;
         SubVector(&node->Centre, &car->Body->Centre.Pos, &toNode);
         REAL nd2 = toNode.v[X] * toNode.v[X] + toNode.v[Y] * toNode.v[Y]
                  + toNode.v[Z] * toNode.v[Z];
-        if (nd2 >= lookahead * lookahead)
+        if (!steerNode && nd2 >= lookahead * lookahead)
+            steerNode = node;
+        if (steerNode && walked > brakeWindow)
             break;
 
         // race-forward at this node, from the same construction as the game's
@@ -126,8 +142,11 @@ void CRD_CpuInput(CTRL *Control)
         }
         if (!fwd)
             break;
+        walked += best;   // best = forward projection of the step ~ its length
         node = fwd;
     }
+    if (!steerNode) steerNode = node;
+    node = steerNode;
     player->CarAI.CurNode = node;
 
     // target = the node's racing-line point (lerp across the track edges)
@@ -153,22 +172,27 @@ void CRD_CpuInput(CTRL *Control)
         return;
     }
 
-    // steering: full lock when ~35 degrees off the line
-    REAL steer = angle * (127.0f / 0.6f);
-    if (steer > 127.0f) steer = 127.0f;
-    if (steer < -127.0f) steer = -127.0f;
-    Control->dx = (signed char)(long)steer;
+    // steering: retail-style sqrt response — strong correction for small
+    // errors, saturating at full lock around ~35 degrees off the line
+    REAL steerMag = (REAL)sqrtf(absAngle / 0.6f) * 127.0f;
+    if (steerMag > 127.0f) steerMag = 127.0f;
+    Control->dx = (signed char)(long)((angle > 0) ? steerMag : -steerMag);
 
-    // throttle: flat out on the straights, ease through corners,
-    // creep at full lock when the target is far off the nose
+    // throttle from the AUTHORED corner speeds (retail behavior): the slowest
+    // racing-line speed inside the braking window sets the target velocity —
+    // flat out on straights, braking in time for slow corners
+    REAL topSpeed = car->TopSpeed;
+    if (topSpeed < 500.0f) topSpeed = 3000.0f;   // guard against odd car data
+    REAL targetVel = minFrac * topSpeed;
+
     if (absAngle > 1.0f)
-        Control->dy = -(CTRL_RANGE_MAX / 4);
-    else if (absAngle > 0.5f)
-        Control->dy = -(CTRL_RANGE_MAX / 2);
-    else if (absAngle > 0.25f)
-        Control->dy = -(CTRL_RANGE_MAX * 3 / 4);
+        Control->dy = -(CTRL_RANGE_MAX / 4);         // way off line: creep and turn
+    else if (fwdSpeed > targetVel * 1.15f)
+        Control->dy = CTRL_RANGE_MAX;                // brake for the corner
+    else if (fwdSpeed > targetVel)
+        Control->dy = 0;                             // coast down to corner speed
     else
-        Control->dy = -CTRL_RANGE_MAX;
+        Control->dy = -CTRL_RANGE_MAX;               // flat out
 
     // self-calibration: if the game's own wrong-way detector says we're
     // persistently racing backwards while driving forward at speed, our
@@ -202,9 +226,10 @@ void CRD_CpuInput(CTRL *Control)
     static long sBeat = 0;
     if ((sBeat++ % 120) == 0) {
         __android_log_print(4 /*INFO*/, "revolt-ai",
-                            "cpu slot %ld: node %ld dx %d dy %d speed %.0f angle %.2f",
+                            "cpu slot %ld: node %ld dx %d dy %d speed %.0f/%.0f frac %.2f angle %.2f",
                             slot, (long)(node - AiNode), (int)Control->dx,
-                            (int)Control->dy, (double)fwdSpeed, (double)angle);
+                            (int)Control->dy, (double)fwdSpeed, (double)targetVel,
+                            (double)minFrac, (double)angle);
     }
 
     // stuck: throttle on but barely moving -> back out for a second
