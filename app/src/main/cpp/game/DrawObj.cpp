@@ -1716,15 +1716,18 @@ void DrawTarget(PLAYER *player)
 	FOG_ON();
 
 	col = 0xff;
-	poly.Usize = poly.Vsize = 64.0f / 256.0f;
+	// ANDROID_PORT: the original UVs (192,64 size 64) point at a faint white
+	// glint in this art drop — additively invisible. The actual crosshair
+	// reticle lives at (32,224) size 32 in fxpage1.
+	poly.Usize = poly.Vsize = 32.0f / 256.0f;
 	poly.Tpage = TPAGE_FX1;
 	poly.RGB = (col >> 1) | (col << 8) | (col << 16);
-	poly.U = 192.0f / 256.0f;
-	poly.V = 64.0f / 256.0f;
+	poly.U = 32.0f / 256.0f;
+	poly.V = 224.0f / 256.0f;
 
 	mod = TIME2MS(TimerCurrent) % 10000;
 	ang = mod / Real(10000);
-	poly.Xsize = poly.Ysize = Real(30);
+	poly.Xsize = poly.Ysize = Real(45);
 
 	RotMatrixZ(&mat, ang);
 	DrawFacingPolyRotMirror(&player->PickupTarget->player->car.Body->Centre.Pos, &mat, &poly, 1, -256);
