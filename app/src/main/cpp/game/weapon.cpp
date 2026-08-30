@@ -33,6 +33,7 @@ void FireWorkMove(OBJECT *obj);
 void FireworkExplode(OBJECT *obj);
 void TurboAIHandler(OBJECT *obj);
 void TurboMoveHandler(OBJECT *obj);
+void RenderTurboGlow(OBJECT *obj);   // ANDROID_PORT: retail-style turbo glow
 void PuttyBombMove(OBJECT *obj);
 
 // globals
@@ -860,6 +861,7 @@ long InitTurbo(OBJECT *obj, long *flags)
 
 	obj->aihandler = (AI_HANDLER)Turbo2Handler;
 	obj->movehandler = (MOVE_HANDLER)TurboMoveHandler;
+	obj->renderhandler = (RENDER_HANDLER)RenderTurboGlow;   // ANDROID_PORT
 
 // remember owner player
 
@@ -895,6 +897,7 @@ long InitTurbo2(OBJECT *obj, long *flags)
 // setup handlers
 
 	obj->aihandler = (AI_HANDLER)Turbo2Handler;
+	obj->renderhandler = (RENDER_HANDLER)RenderTurboGlow;   // ANDROID_PORT
 
 // remember owner player
 
@@ -2377,12 +2380,39 @@ void Turbo2Handler(OBJECT *obj)
 	if (turbo->Age < turbo->LifeTime)
 	{
 		obj->player->car.TopSpeed = TO_VEL(MPH2OGU_SPEED * 75) * (ONE + HALF * (ONE - turbo->Age / turbo->LifeTime));
+		// ANDROID_PORT: retail-style glow — hold the car brightened while
+		// boosting (UpdateCarMisc decays it back to zero after expiry)
+		obj->player->car.AddLit = 200 + (long)(180.0f * (ONE - turbo->Age / turbo->LifeTime));
 	}
 	else
 	{
 		obj->player->car.TopSpeed = obj->player->car.DefaultTopSpeed;   // ANDROID_PORT: this handler (the one actually wired up) never restored top speed — car stayed boosted forever
 		OBJ_FreeObject(obj);
 	}
+}
+
+// ANDROID_PORT: retail-style turbo halo — a pulsing additive orange glow
+// sprite around the boosted car (fxpage1 orange puff at 64,0)
+void RenderTurboGlow(OBJECT *obj)
+{
+	TURBO2_OBJ *turbo = (TURBO2_OBJ*)obj->Data;
+	FACING_POLY poly;
+	REAL f;
+	long c;
+
+	if (turbo->Age >= turbo->LifeTime) return;
+	f = ONE - turbo->Age / turbo->LifeTime;
+
+	poly.Xsize = poly.Ysize = Real(84) + Real(12) * (REAL)sin((REAL)TIME2MS(TimerCurrent) / 30.0f);
+	poly.U = 64.0f / 256.0f;
+	poly.V = 0.0f;
+	poly.Usize = poly.Vsize = 64.0f / 256.0f;
+	poly.Tpage = TPAGE_FX1;
+
+	c = (long)(f * 255.0f);
+	poly.RGB = (c << 16) | ((c * 2 / 3) << 8) | (c / 8);   // orange
+
+	DrawFacingPoly(&obj->player->car.BodyWorldPos, &poly, 1, -32.0f);
 }
 
 ////////////////////
