@@ -23,13 +23,25 @@
 #include "camera.h"
 
 #define MAX_FIREWORK_AGE Real(1.2)
-#define FIREWORK_BLAST_RADIUS Real(512.0)   // ANDROID_PORT: blast knock radius (explosion was cosmetic in the 1999 drop)
+
+// ANDROID_PORT: firework behavior ported from the retail Xbox tree
+// (rvsource/Xbox/Src/weapon.cpp) — the 1999 PC drop's version was unfinished
+// (no proximity detonation, inverted homing, cosmetic-only explosion)
+#define FIREWORK_RADIUS                 Real(100.0)
+#define FIREWORK_RADIUS_SQ              (FIREWORK_RADIUS * FIREWORK_RADIUS)
+#define FIREWORK_EXPLODE_RADIUS         Real(500.0)
+#define FIREWORK_EXPLODE_RADIUS_SQ      (FIREWORK_EXPLODE_RADIUS * FIREWORK_EXPLODE_RADIUS)
+#define FIREWORK_EXPLODE_MIN_RADIUS_SQ  (Real(75.0) * Real(75.0))
+#define FIREWORK_EXPLODE_OFFSET         Real(50.0)
+#define FIREWORK_EXPLODE_IMPULSE        Real(100000.0)
+#define FIREWORK_EXPLODE_IMPULSE2       Real(100000.0)
 
 extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT: on-screen/logcat weapon event ticker
 
 // prototypes
 
 void FireWorkMove(OBJECT *obj);
+void FireWorkMoveAndHome(OBJECT *obj);   // ANDROID_PORT: from the Xbox tree
 void FireworkExplode(OBJECT *obj);
 void TurboAIHandler(OBJECT *obj);
 void TurboMoveHandler(OBJECT *obj);
@@ -1277,10 +1289,44 @@ void FireworkHandler(OBJECT *obj)
 	if (firework->Age < MAX_FIREWORK_AGE) {
 		// Move firework
 		FireWorkMove(obj);
+
+		// ANDROID_PORT (Xbox tree): detonate when passing near any car
+		{
+			REAL dRLenSq;
+			VEC dR;
+			BBOX bBox;
+			PLAYER *nplayer;
+
+			SetBBox(&bBox,
+				obj->body.Centre.Pos.v[X] - FIREWORK_RADIUS,
+				obj->body.Centre.Pos.v[X] + FIREWORK_RADIUS,
+				obj->body.Centre.Pos.v[Y] - FIREWORK_RADIUS,
+				obj->body.Centre.Pos.v[Y] + FIREWORK_RADIUS,
+				obj->body.Centre.Pos.v[Z] - FIREWORK_RADIUS,
+				obj->body.Centre.Pos.v[Z] + FIREWORK_RADIUS);
+			for (nplayer = PLR_PlayerHead; nplayer != NULL; nplayer = nplayer->next) {
+				if (nplayer->type == PLAYER_GHOST) continue;
+				if (nplayer->type == PLAYER_NONE) continue;
+				if (nplayer == obj->player) continue;
+
+				if (!BBTestXZY(&bBox, &nplayer->car.Body->CollSkin.BBox)) continue;
+
+				VecMinusVec(&nplayer->car.Body->Centre.Pos, &obj->body.Centre.Pos, &dR);
+				if ((dRLenSq = VecDotVec(&dR, &dR)) < FIREWORK_RADIUS_SQ) {
+					firework->Age = MAX_FIREWORK_AGE;
+					break;
+				}
+			}
+		}
 	} else {
 		if (!firework->Exploded) {
 			// Set up explosions
 			FireworkExplode(obj);
+			// ANDROID_PORT (Xbox tree): dead firework must stop colliding
+			obj->CollType = COLL_TYPE_NONE;
+			obj->body.CollSkin.AllowObjColls = FALSE;
+			obj->body.CollSkin.AllowWorldColls = FALSE;
+			obj->collhandler = NULL;
 		} else {
 			// update the lightsource
 			if ((obj->Light != NULL) && (firework->Age < MAX_FIREWORK_AGE + 0.8)) {
@@ -1303,36 +1349,26 @@ void FireWorkMove(OBJECT *obj)
 	// VEC angImp;
 	FIREWORK_OBJ *firework = (FIREWORK_OBJ *)obj->Data;
 
-	// Get the target relative position
+	// ANDROID_PORT: this function now matches the retail Xbox tree — homing
+	// fireworks fly via FireWorkMoveAndHome (the 1999 version's homing
+	// impulse was sign-inverted and it never turned toward its target)
 	if (firework->Target != NULL) {
-		VecMinusVec(&firework->Target->body.Centre.Pos, &obj->body.Centre.Pos, &dR);
-		dRLen = VecLen(&dR);
-		if (dRLen < Real(150.0)) {   // ANDROID_PORT: proximity fuse — detonate at the target instead of coasting past
-			firework->Age = MAX_FIREWORK_AGE;
-			return;
-		}
-		if (dRLen > SMALL_REAL) {
-			VecDivScalar(&dR, dRLen / 2.5f);
-		} else {
-			firework->Age = MAX_FIREWORK_AGE;
-			return;
-		}
-	} else {
-		CopyVec(&DownVec, &dR);
-		dRLen = WEAPON_RANGE_MAX;
+		FireWorkMoveAndHome(obj);
+		return;
 	}
 
-	// Accelerate firework towards target, or forwards if no target
-	impMod = ONE;//0.2f + dRLen / WEAPON_RANGE_MAX;
+	CopyVec(&DownVec, &dR);
+	dRLen = WEAPON_RANGE_MAX;
+
+	// Accelerate firework forwards
+	impMod = ONE;
 	VecEqScalarVec(&imp, -0.5f * impMod * FLD_Gravity * TimeStep, &obj->body.Centre.WMatrix.mv[U]);
 	ApplyParticleImpulse(&obj->body.Centre, &imp);
 
-	// ANDROID_PORT: home TOWARD the target — the original impulse was
-	// -0.005 * FLD_Gravity * dR with FLD_Gravity POSITIVE (+2200), i.e. it
-	// accelerated the missile AWAY from what it locked onto
-	VecEqScalarVec(&imp, obj->body.Centre.Mass * Real(3000.0) * TimeStep, &dR);
-	ApplyParticleImpulse(&obj->body.Centre, &imp);
-	(void)offset;
+	// Make firework dip downwards as it travels
+	VecEqScalarVec(&imp, -0.005f * FLD_Gravity * TimeStep, &dR);
+	VecEqScalarVec(&offset, 50, &obj->body.Centre.WMatrix.mv[U]);
+	ApplyBodyImpulse(&obj->body, &imp, &offset);
 
 	//VecPlusEqScalarVec(&offset, 500, &obj->body.Centre.WMatrix.mv[R]);
 	//VecEqScalarVec(&imp, -30 * TimeStep, &obj->body.Centre.WMatrix.mv[L]);
@@ -1369,6 +1405,54 @@ void FireWorkMove(OBJECT *obj)
 
 }
 
+// ANDROID_PORT: ported verbatim from the retail Xbox tree (weapon.cpp) —
+// forward thrust scaled by range, strong homing acceleration toward the
+// target, and an angular impulse that visibly turns the rocket in flight
+void FireWorkMoveAndHome(OBJECT *obj)
+{
+	REAL dRLen, scale;
+	VEC dR, axis, imp;
+	FIREWORK_OBJ *firework = (FIREWORK_OBJ *)obj->Data;
+
+	// Get the target relative position
+	VecMinusVec(&firework->Target->body.Centre.Pos, &obj->body.Centre.Pos, &dR);
+	dRLen = VecLen(&dR);
+	if (dRLen > SMALL_REAL) {
+		VecDivScalar(&dR, dRLen);
+	} else {
+		firework->Age = MAX_FIREWORK_AGE;
+		return;
+	}
+
+	// Accelerate firework forwards
+	scale = dRLen / WEAPON_RANGE_MAX;
+	VecEqScalarVec(&imp, -HALF * scale * FLD_Gravity * TimeStep, &obj->body.Centre.WMatrix.mv[U]);
+	ApplyParticleImpulse(&obj->body.Centre, &imp);
+
+	// Accelerate firework toward target
+	VecEqScalarVec(&imp, HALF * FLD_Gravity * TimeStep, &dR);
+	ApplyParticleImpulse(&obj->body.Centre, &imp);
+
+	// Rotate firework towards target
+	VecCrossVec(&dR, &obj->body.Centre.WMatrix.mv[U], &axis);
+	VecMulScalar(&axis, 50);
+	ApplyBodyAngImpulse(&obj->body, &axis);
+
+	// Move the body
+	UpdateBody(&obj->body, TimeStep);
+
+	// Update the trail
+	if (firework->Trail != NULL) {
+		firework->TrailTime += TimeStep;
+		if (firework->TrailTime > firework->Trail->Data->LifeTime / firework->Trail->MaxTrails) {
+			UpdateTrail(firework->Trail, &obj->body.Centre.Pos);
+			firework->TrailTime = ZERO;
+		} else {
+			ModifyFirstTrail(firework->Trail, &obj->body.Centre.Pos);
+		}
+	}
+}
+
 void FireworkExplode(OBJECT *obj)
 {
 	int iFlash;
@@ -1396,18 +1480,17 @@ void FireworkExplode(OBJECT *obj)
 	// Create Explosion
 	CreateSpark(SPARK_EXPLOSION1, &obj->body.Centre.Pos, &ZeroVector, 0, 0);
 
-	// Create smoke
-	VecEqScalarVec(&vel, 60, &UpVec);
+	// Create smoke  (ANDROID_PORT: retail Xbox velocities — Y is down)
+	SetVec(&vel, 0, -60, 0);
 	for (iFlash = 0; iFlash < 3; iFlash++) {
 		CreateSpark(SPARK_SMOKE2, &obj->body.Centre.Pos, &vel, 60, 0);
 	}
 
-	//Create flashy bits
-	//VecPlusScalarVec(&obj->body.Centre.Vel, 300, &UpVec, &vel);
-	VecEqScalarVec(&vel, 300, &UpVec);
+	//Create flashy bits  (ANDROID_PORT: retail Xbox burst — much faster spread)
+	SetVec(&vel, 0, -1200, 0);
 	for (iFlash = 0; iFlash < 30; iFlash++) {
-		CreateSpark(SPARK_SMALLORANGE, &obj->body.Centre.Pos, &vel, 600, 0);
-		CreateSpark(SPARK_SMALLRED, &obj->body.Centre.Pos, &vel, 800, 0);
+		CreateSpark(SPARK_SMALLORANGE, &obj->body.Centre.Pos, &vel, 1200, 0);
+		CreateSpark(SPARK_SMALLRED, &obj->body.Centre.Pos, &vel, 1400, 0);
 	}
 
 	// setup light
@@ -1427,24 +1510,47 @@ void FireworkExplode(OBJECT *obj)
 
 	DbgPrintf("BANG SPARKS=%d", NActiveSparks);   // ANDROID_PORT: diagnose invisible explosion particles
 
-	// ANDROID_PORT: the 1999 drop's explosion was cosmetic only — actually
-	// knock cars caught in the blast (impulse away from the bang, plus lift)
+	// ANDROID_PORT: blast physics ported from the retail Xbox tree — inverse
+	// square impulse away from the bang plus an upward kick, applied at a
+	// random offset so cars get thrown AND spun
 	{
 		PLAYER *bplayer;
-		VEC dR, imp;
-		REAL dist, falloff;
+		VEC dR, vel, pos;
+		REAL dRLenSq, dRLen;
+		BBOX bBox;
 
+		SetBBox(&bBox,
+			obj->body.Centre.Pos.v[X] - FIREWORK_EXPLODE_RADIUS,
+			obj->body.Centre.Pos.v[X] + FIREWORK_EXPLODE_RADIUS,
+			obj->body.Centre.Pos.v[Y] - FIREWORK_EXPLODE_RADIUS,
+			obj->body.Centre.Pos.v[Y] + FIREWORK_EXPLODE_RADIUS,
+			obj->body.Centre.Pos.v[Z] - FIREWORK_EXPLODE_RADIUS,
+			obj->body.Centre.Pos.v[Z] + FIREWORK_EXPLODE_RADIUS);
 		for (bplayer = PLR_PlayerHead ; bplayer ; bplayer = bplayer->next)
 		{
+			if (bplayer->type == PLAYER_GHOST) continue;
 			if (!bplayer->car.Body) continue;
+
+			if (!BBTestXZY(&bBox, &bplayer->car.Body->CollSkin.BBox)) continue;
+
 			VecMinusVec(&bplayer->car.Body->Centre.Pos, &obj->body.Centre.Pos, &dR);
-			dist = VecLen(&dR);
-			if (dist > FIREWORK_BLAST_RADIUS || dist < SMALL_REAL) continue;
-			falloff = ONE - dist / FIREWORK_BLAST_RADIUS;
-			VecDivScalar(&dR, dist);
-			VecPlusEqScalarVec(&dR, Real(0.5), &UpVec);
-			VecEqScalarVec(&imp, bplayer->car.Body->Centre.Mass * Real(1800.0) * falloff, &dR);
-			VecPlusEqVec(&bplayer->car.Body->Centre.Impulse, &imp);
+			if ((dRLenSq = VecDotVec(&dR, &dR)) > FIREWORK_EXPLODE_RADIUS_SQ) continue;
+			if (dRLenSq < FIREWORK_EXPLODE_MIN_RADIUS_SQ) dRLenSq = FIREWORK_EXPLODE_MIN_RADIUS_SQ;
+			dRLen = (REAL)sqrt(dRLenSq);
+
+			// Calculate the explosion impulse
+			VecEqScalarVec(&vel, FIREWORK_EXPLODE_IMPULSE / dRLenSq, &dR);
+			vel.v[Y] = -FIREWORK_EXPLODE_IMPULSE2 / (4 * dRLen);
+
+			SetVec(&pos,
+				frand(2 * FIREWORK_EXPLODE_OFFSET) - FIREWORK_EXPLODE_OFFSET,
+				frand(2 * FIREWORK_EXPLODE_OFFSET) - FIREWORK_EXPLODE_OFFSET,
+				frand(2 * FIREWORK_EXPLODE_OFFSET) - FIREWORK_EXPLODE_OFFSET);
+
+			ApplyBodyImpulse(bplayer->car.Body, &vel, &pos);
+
+			bplayer->car.Body->NoContactTime = ZERO;
+
 			DbgPrintf("MISSILE HIT CAR %d", (int)(bplayer - Players));
 		}
 	}
