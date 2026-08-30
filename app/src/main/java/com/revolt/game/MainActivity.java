@@ -27,7 +27,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private static native void nativeSetDataDir(String dir);
     private static native void nativeConfigure(String levelDir, int carId, int gameType,
-                                               boolean reversed, boolean mirrored);
+                                               boolean reversed, boolean mirrored,
+                                               int numCpuCars);
     private static native void nativeSurfaceChanged(Surface surface, int w, int h);
     private static native void nativeSurfaceDestroyed();
     private static native void nativeTouchReset();
@@ -50,7 +51,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                 getIntent().getIntExtra(LauncherActivity.EXTRA_CAR_ID, 0),
                 getIntent().getIntExtra(LauncherActivity.EXTRA_GAME_TYPE, 0),
                 getIntent().getBooleanExtra(LauncherActivity.EXTRA_REVERSED, false),
-                getIntent().getBooleanExtra(LauncherActivity.EXTRA_MIRRORED, false));
+                getIntent().getBooleanExtra(LauncherActivity.EXTRA_MIRRORED, false),
+                getIntent().getIntExtra(LauncherActivity.EXTRA_NUM_CPUS, 7));
         nativeSetDataDir(GameData.root(this).getAbsolutePath());
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

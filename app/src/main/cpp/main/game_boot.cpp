@@ -70,10 +70,14 @@ static int  gCfgCarId = 0;
 static int  gCfgGameType = GAMETYPE_TRIAL;
 static int  gCfgReversed = FALSE;
 static int  gCfgMirrored = FALSE;
+static int  gCfgNumCPUs = 7;   // opponents in GAMETYPE_SINGLE — retail-style 8-car grid (grid holds 12)
 
 extern "C" void Revolt_Configure(const char *levelDir, int carId, int gameType,
-                                 int reversed, int mirrored)
+                                 int reversed, int mirrored, int numCpuCars)
 {
+    gCfgNumCPUs = numCpuCars;
+    if (gCfgNumCPUs < 1) gCfgNumCPUs = 1;
+    if (gCfgNumCPUs > MAX_NUM_PLAYERS - 1) gCfgNumCPUs = MAX_NUM_PLAYERS - 1;
     if (levelDir && levelDir[0]) {
         strncpy(gCfgLevelDir, levelDir, sizeof(gCfgLevelDir) - 1);
         gCfgLevelDir[sizeof(gCfgLevelDir) - 1] = '\0';
@@ -85,8 +89,8 @@ extern "C" void Revolt_Configure(const char *levelDir, int carId, int gameType,
     gCfgGameType = (gameType == GAMETYPE_SINGLE) ? GAMETYPE_SINGLE : GAMETYPE_TRIAL;
     gCfgReversed = reversed ? TRUE : FALSE;
     gCfgMirrored = mirrored ? TRUE : FALSE;
-    ALOGI("configure: level '%s' car %d type %d rev %d mir %d",
-          gCfgLevelDir, carId, gCfgGameType, gCfgReversed, gCfgMirrored);
+    ALOGI("configure: level '%s' car %d type %d rev %d mir %d cpus %d",
+          gCfgLevelDir, carId, gCfgGameType, gCfgReversed, gCfgMirrored, gCfgNumCPUs);
 }
 
 // ---------------------------------------------------------------------------
@@ -341,11 +345,21 @@ void InitPlayersSingle(void)
         return;
     }
 
-    GetCarGrid(1, &pos, &mat);
-    if (!PLR_CreatePlayer(PLAYER_CPU, CTRL_TYPE_CPU, 0, &pos, &mat)) {
-        Box(NULL, (char *)"Can't create computer player!", MB_OK | MB_ICONERROR);
-        QuitGame = TRUE;
-        return;
+    // ANDROID_PORT: full grid of CPU opponents (main.cpp spawned exactly one),
+    // each with a different selectable car, walking away from the player's pick
+    {
+        extern int NextValidCarID(int currentID);
+        int i, cpuCar = playerCarID;
+
+        for (i = 1; i <= gCfgNumCPUs; i++) {
+            cpuCar = NextValidCarID(cpuCar);
+            GetCarGrid(i, &pos, &mat);
+            if (!PLR_CreatePlayer(PLAYER_CPU, CTRL_TYPE_CPU, cpuCar, &pos, &mat)) {
+                Box(NULL, (char *)"Can't create computer player!", MB_OK | MB_ICONERROR);
+                break;   // keep whatever opponents we managed to create
+            }
+        }
+        ALOGI("race grid: player + %d CPU cars", (int)(NumPlayers - 1));
     }
 
     GHO_GhostExists = FALSE;
