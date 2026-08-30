@@ -23,6 +23,9 @@
 #include "camera.h"
 
 #define MAX_FIREWORK_AGE Real(1.2)
+#define FIREWORK_BLAST_RADIUS Real(512.0)   // ANDROID_PORT: blast knock radius (explosion was cosmetic in the 1999 drop)
+
+extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT: on-screen/logcat weapon event ticker
 
 // prototypes
 
@@ -293,6 +296,10 @@ long InitFirework(OBJECT *obj, long *flags)
 	firework->Exploded = FALSE;
 	firework->Age = ZERO;
 	firework->Target = obj->player->PickupTarget;
+	if (firework->Target)   // ANDROID_PORT: weapon event ticker
+		DbgPrintf("MISSILE LOCKED CAR %d", (int)(firework->Target->player - Players));
+	else
+		DbgPrintf("MISSILE - NO LOCK");
 
 	// offset pos
 	RotTransVector(&obj->body.Centre.WMatrix, &obj->body.Centre.Pos, &obj->player->car.WeaponOffset, &obj->body.Centre.Pos);
@@ -1297,6 +1304,10 @@ void FireWorkMove(OBJECT *obj)
 	if (firework->Target != NULL) {
 		VecMinusVec(&firework->Target->body.Centre.Pos, &obj->body.Centre.Pos, &dR);
 		dRLen = VecLen(&dR);
+		if (dRLen < Real(150.0)) {   // ANDROID_PORT: proximity fuse — detonate at the target instead of coasting past
+			firework->Age = MAX_FIREWORK_AGE;
+			return;
+		}
 		if (dRLen > SMALL_REAL) {
 			VecDivScalar(&dR, dRLen / 2.5f);
 		} else {
@@ -1313,9 +1324,12 @@ void FireWorkMove(OBJECT *obj)
 	VecEqScalarVec(&imp, -0.5f * impMod * FLD_Gravity * TimeStep, &obj->body.Centre.WMatrix.mv[U]);
 	ApplyParticleImpulse(&obj->body.Centre, &imp);
 
-	VecEqScalarVec(&imp, -0.005f * FLD_Gravity * TimeStep, &dR);
-	VecEqScalarVec(&offset, 50, &obj->body.Centre.WMatrix.mv[U]);
-	ApplyBodyImpulse(&obj->body, &imp, &offset);
+	// ANDROID_PORT: home TOWARD the target — the original impulse was
+	// -0.005 * FLD_Gravity * dR with FLD_Gravity POSITIVE (+2200), i.e. it
+	// accelerated the missile AWAY from what it locked onto
+	VecEqScalarVec(&imp, obj->body.Centre.Mass * Real(3000.0) * TimeStep, &dR);
+	ApplyParticleImpulse(&obj->body.Centre, &imp);
+	(void)offset;
 
 	//VecPlusEqScalarVec(&offset, 500, &obj->body.Centre.WMatrix.mv[R]);
 	//VecEqScalarVec(&imp, -30 * TimeStep, &obj->body.Centre.WMatrix.mv[L]);
@@ -1406,6 +1420,28 @@ void FireworkExplode(OBJECT *obj)
 		obj->Light->x = obj->body.Centre.Pos.v[X];
 		obj->Light->y = obj->body.Centre.Pos.v[Y];
 		obj->Light->z = obj->body.Centre.Pos.v[Z];
+	}
+
+	// ANDROID_PORT: the 1999 drop's explosion was cosmetic only — actually
+	// knock cars caught in the blast (impulse away from the bang, plus lift)
+	{
+		PLAYER *bplayer;
+		VEC dR, imp;
+		REAL dist, falloff;
+
+		for (bplayer = PLR_PlayerHead ; bplayer ; bplayer = bplayer->next)
+		{
+			if (!bplayer->car.Body) continue;
+			VecMinusVec(&bplayer->car.Body->Centre.Pos, &obj->body.Centre.Pos, &dR);
+			dist = VecLen(&dR);
+			if (dist > FIREWORK_BLAST_RADIUS || dist < SMALL_REAL) continue;
+			falloff = ONE - dist / FIREWORK_BLAST_RADIUS;
+			VecDivScalar(&dR, dist);
+			VecPlusEqScalarVec(&dR, Real(0.5), &UpVec);
+			VecEqScalarVec(&imp, bplayer->car.Body->Centre.Mass * Real(1800.0) * falloff, &dR);
+			VecPlusEqVec(&bplayer->car.Body->Centre.Impulse, &imp);
+			DbgPrintf("MISSILE HIT CAR %d", (int)(bplayer - Players));
+		}
 	}
 
 	firework->Exploded = TRUE;
@@ -1947,6 +1983,7 @@ void ElectroPulseHandler(OBJECT *obj)
 		{
 			flag = (long)(player - Players);  // ANDROID_PORT: player slot index
 	 		CreateObject(&player->car.Body->Centre.Pos, &player->car.Body->Centre.WMatrix, OBJECT_TYPE_ELECTROZAPPED, &flag);
+			DbgPrintf("ZAP CAR %d - NO POWER %d SEC", (int)flag, (int)ELECTRO_KILL_TIME);   // ANDROID_PORT
 		}
 
 		player->car.PowerTimer = ELECTRO_KILL_TIME;
@@ -2343,6 +2380,7 @@ void Turbo2Handler(OBJECT *obj)
 	}
 	else
 	{
+		obj->player->car.TopSpeed = obj->player->car.DefaultTopSpeed;   // ANDROID_PORT: this handler (the one actually wired up) never restored top speed — car stayed boosted forever
 		OBJ_FreeObject(obj);
 	}
 }
