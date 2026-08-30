@@ -51,6 +51,8 @@
 #endif
 
 
+extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT: debug ticker
+
 //
 // Global variables
 //
@@ -349,6 +351,18 @@ static void UpdatePlayerPickup(PLAYER *player)
 // Select weapon target if the weapon type requires it
 	if ((player->PickupType == PICKUP_FIREWORK) || (player->PickupType == PICKUP_FIREWORKPACK)) {
 		player->PickupTarget = WeaponTarget(player->ownobj);
+	}
+
+// ANDROID_PORT: report lock transitions for the local player (debug ticker)
+	if (player == PLR_LocalPlayer) {
+		static OBJECT *lastTarget = NULL;
+		if (player->PickupTarget != lastTarget) {
+			if (player->PickupTarget)
+				DbgPrintf("TARGET LOCK CAR %d", (int)(player->PickupTarget->player - Players));
+			else
+				DbgPrintf("TARGET LOST");
+			lastTarget = player->PickupTarget;
+		}
 	}
 }
 #endif
