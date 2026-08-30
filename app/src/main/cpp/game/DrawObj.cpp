@@ -1716,12 +1716,20 @@ void DrawTarget(PLAYER *player)
 	FOG_ON();
 
 	col = 0xff;
+	(void)col;
 	// ANDROID_PORT: the original UVs (192,64 size 64) point at a faint white
 	// glint in this art drop — additively invisible. The actual crosshair
 	// reticle lives at (32,224) size 32 in fxpage1.
 	poly.Usize = poly.Vsize = 32.0f / 256.0f;
 	poly.Tpage = TPAGE_FX1;
-	poly.RGB = (col >> 1) | (col << 8) | (col << 16);
+	// ANDROID_PORT: retail colors — green for your own lock, red when the
+	// lock is on YOU, white for CPU-vs-CPU locks
+	if (player == PLR_LocalPlayer)
+		poly.RGB = 0x40ff40;
+	else if (PLR_LocalPlayer && player->PickupTarget == PLR_LocalPlayer->ownobj)
+		poly.RGB = 0xff4040;
+	else
+		poly.RGB = 0xffffff;
 	poly.U = 32.0f / 256.0f;
 	poly.V = 224.0f / 256.0f;
 

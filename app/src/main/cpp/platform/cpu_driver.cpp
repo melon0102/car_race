@@ -33,6 +33,7 @@
 #include "ainode.h"
 #include "timing.h"
 #include "gameloop.h"
+#include "weapon.h"
 
 // per-player recovery state, indexed by player slot
 static REAL sStuckTime[MAX_NUM_PLAYERS];
@@ -183,6 +184,18 @@ void CRD_CpuInput(CTRL *Control)
         }
     } else {
         sWrongWayTime[slot] = 0.0f;
+    }
+
+    // use pickups: rockets wait for a lock, everything else fires when held.
+    // FIRE is pulsed (16 frames on / 16 off) so the edge-triggered input
+    // registers repeatedly for multi-shot packs.
+    static long sFirePulse = 0;
+    sFirePulse++;
+    if (player->PickupNum > 0) {
+        int needsLock = (player->PickupType == PICKUP_FIREWORK ||
+                         player->PickupType == PICKUP_FIREWORKPACK);
+        if ((!needsLock || player->PickupTarget) && ((sFirePulse >> 4) & 1))
+            Control->digital |= CTRL_FIRE;
     }
 
     // heartbeat to logcat (~every 2s at 60fps) so remote debugging can see us

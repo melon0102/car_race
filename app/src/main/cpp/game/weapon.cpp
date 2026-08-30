@@ -3389,8 +3389,10 @@ OBJECT *WeaponTarget(OBJECT *playerObj)
 	// Loop over other players
 	for (target = PLR_PlayerHead; target != NULL; target = target->next) {
 
-		// Only target other players and CPU cars
-		if ((target->type != PLAYER_CPU) && (player->type != PLAYER_REMOTE) && (player->type != PLAYER_LOCAL)) continue;
+		// Only target racing cars (local, remote or CPU) — the original filter
+		// wrongly restricted CPU players to CPU-only targets and let ghosts by
+		// ANDROID_PORT
+		if (target->type != PLAYER_CPU && target->type != PLAYER_LOCAL && target->type != PLAYER_REMOTE) continue;
 
 		// do not target self
 		if (target == player) continue;
