@@ -392,6 +392,22 @@ void DrawControlPanel(void)
 
 	SET_TPAGE(TPAGE_FONT);
 
+// pickup count
+// ANDROID_PORT: the 1999 build drew the pickup icon but never its count, so a
+// 3-shot firework pack looked identical to a single rocket. Ported from the
+// retail panel (rvsource/Xbox/Src/panel.cpp): same position, size and yellow
+// for the multi-shot pickups. Retail additionally hides it in trial/practice/
+// training; kept visible in every mode here since time trial is a normal way
+// to play this port.
+
+	if (PLR_LocalPlayer->PickupNum &&
+	    (PLR_LocalPlayer->PickupType == PICKUP_FIREWORKPACK ||
+	     PLR_LocalPlayer->PickupType == PICKUP_WATERBOMB))
+	{
+		wsprintf(buf, "%d", (long)PLR_LocalPlayer->PickupNum);
+		DumpText(50, 108, 6, 8, 0xc0ffff00, buf);
+	}
+
 // split time?
 
 	if (DisplaySplitCount)
