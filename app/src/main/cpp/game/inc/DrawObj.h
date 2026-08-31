@@ -61,3 +61,7 @@ extern void RenderSpeedup(OBJECT *obj);
 extern FACING_POLY SunFacingPoly, DragonFireFacingPoly;
 
 #endif
+
+// ANDROID_PORT: skybox (see DrawObj.cpp)
+extern long Skybox;
+extern void RenderSkybox(void);

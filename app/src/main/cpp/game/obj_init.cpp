@@ -104,6 +104,7 @@ static long InitAbcBlock(OBJECT *obj, long *flags);
 static long InitBasketball(OBJECT *obj, long *flags);
 static long InitLantern(OBJECT *obj, long *flags);
 static long InitObjectThrower(OBJECT *obj, long *flags);
+static long InitSkybox(OBJECT *obj, long *flags);
 
 
 static OBJECT_INIT_DATA ObjInitData[] = {
@@ -175,7 +176,7 @@ static OBJECT_INIT_DATA ObjInitData[] = {
 	NULL, 0,                       // TUMBLEWEED
 	NULL, 0,                       // SMALLSCREEN
 	InitLantern, 0,                // LANTERN
-	NULL, 0,                       // SKYBOX
+	InitSkybox, 0,                 // SKYBOX
 	NULL, 0,                       // SLIDER
 	InitBottle, 0,                 // BOTTLE
 	InitBucket, 0,                 // BUCKET
@@ -2253,6 +2254,60 @@ static long InitObjectThrower(OBJECT *obj, long *flags)
               (int)objThrower->ObjectType, (int)objThrower->Speed);
 
     return TRUE;
+}
+
+#endif
+
+#ifdef _PC
+
+/////////////////////////////////////////////////////////////////////
+// ANDROID_PORT: skybox (ported from the retail Xbox tree)
+//
+// Loads the six cube-face textures for this level into TPAGE_MISC3.. and
+// arms the skybox renderer; the object itself is not needed afterwards, so
+// it returns FALSE to free the slot exactly as retail does.
+/////////////////////////////////////////////////////////////////////
+
+static char *SkyboxFiles[][6] = {
+    {
+        "levels\ship1\sky_ft.bmp", "levels\ship1\sky_rt.bmp",
+        "levels\ship1\sky_bk.bmp", "levels\ship1\sky_lt.bmp",
+        "levels\ship1\sky_tp.bmp", "levels\ship1\sky_bt.bmp",
+    },
+    {
+        "levels\ship2\sky_ft.bmp", "levels\ship2\sky_rt.bmp",
+        "levels\ship2\sky_bk.bmp", "levels\ship2\sky_lt.bmp",
+        "levels\ship2\sky_tp.bmp", "levels\ship2\sky_bt.bmp",
+    },
+    {
+        "levels\wild_west1\sky_ft.bmp", "levels\wild_west1\sky_rt.bmp",
+        "levels\wild_west1\sky_bk.bmp", "levels\wild_west1\sky_lt.bmp",
+        "levels\wild_west1\sky_tp.bmp", "levels\wild_west1\sky_bt.bmp",
+    },
+    {
+        "levels\nhood1\sky_ft.bmp", "levels\nhood1\sky_rt.bmp",
+        "levels\nhood1\sky_bk.bmp", "levels\nhood1\sky_lt.bmp",
+        "levels\nhood1\sky_tp.bmp", "levels\nhood1\sky_bt.bmp",
+    },
+};
+
+#define SKYBOX_SET_NUM ((long)(sizeof(SkyboxFiles) / sizeof(SkyboxFiles[0])))
+
+static long InitSkybox(OBJECT *obj, long *flags)
+{
+    long i, set = flags[0];
+
+    if (set < 0 || set >= SKYBOX_SET_NUM)
+        return FALSE;
+
+    for (i = 0 ; i < 6 ; i++)
+        LoadTextureClever(SkyboxFiles[set][i], (char)(TPAGE_MISC3 + i), 256, 256, 0, FxTextureSet, FALSE);
+
+    Skybox = TRUE;
+    DbgPrintf("SKYBOX SET %d LOADED", (int)set);
+
+    // the object has done its job
+    return FALSE;
 }
 
 #endif

@@ -290,6 +290,13 @@ void GLP_GameLoop(void)
 		SetCameraView(&Camera[CameraCount].WMatrix, &Camera[CameraCount].WPos, Camera[CameraCount].Shake);
 		SetCameraVisiMask(&Camera[CameraCount].WPos);
 
+// ANDROID_PORT: draw the skybox over the cleared background. Retail swaps it
+// for ClearBuffers entirely; here it goes after SetCameraView because
+// RenderSkybox needs the view matrix that call establishes.
+
+		if (Skybox)
+			RenderSkybox();
+
 // render opaque polys
 
 		ResetSemiList();

@@ -36,6 +36,7 @@
 #include "object.h"
 #include "Control.h"
 #include "level.h"
+#include "DrawObj.h"   // ANDROID_PORT: skybox flag
 #include "player.h"
 #include "editobj.h"
 #include "instance.h"
@@ -375,6 +376,7 @@ static void s_LoadTrackData(void)
 	LoadSfx(LevelInf[GameSettings.Level].Dir);
 
 	// load objects
+	Skybox = FALSE;   // ANDROID_PORT: re-armed by InitSkybox if this level has one
 	LoadObjects(GetLevelFilename("fob", FILENAME_MAKE_BODY | FILENAME_GAME_SETTINGS));
 
 	// load ai zones

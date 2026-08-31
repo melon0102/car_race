@@ -23,6 +23,15 @@ enum {
 	TPAGE_FX2,
 	TPAGE_FX3,
 	TPAGE_MISC1,
+	// ANDROID_PORT: retail has MISC1..MISC8; the skybox needs six consecutive
+	// pages from MISC3 for its cube faces (rvsource/Xbox/Src/texture.h)
+	TPAGE_MISC2,
+	TPAGE_MISC3,
+	TPAGE_MISC4,
+	TPAGE_MISC5,
+	TPAGE_MISC6,
+	TPAGE_MISC7,
+	TPAGE_MISC8,
 
 	TPAGE_NUM
 };

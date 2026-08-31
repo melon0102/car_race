@@ -1854,3 +1854,115 @@ void RenderSpeedup(OBJECT *obj)
 
 
 }
+/////////////////////////////////////////////////////////////////////
+//
+// ANDROID_PORT: skybox — ported from the retail Xbox tree
+// (rvsource/Xbox/Src/drawobj.cpp). Draws a textured cube centred on the
+// camera in place of the flat background clear. The 1999 build had no
+// skybox at all, so levels that ship sky textures (nhood1, ship1, ship2,
+// stunts) fell back to a flat fog-coloured sky.
+//
+/////////////////////////////////////////////////////////////////////
+
+long Skybox = FALSE;
+
+#define SKYBOX_SIZE 1000.0f
+
+static VEC SkyboxVerts[8] = {
+    {{-SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE}},
+    {{ SKYBOX_SIZE, -SKYBOX_SIZE,  SKYBOX_SIZE}},
+    {{-SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE}},
+    {{ SKYBOX_SIZE,  SKYBOX_SIZE,  SKYBOX_SIZE}},
+    {{-SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE}},
+    {{ SKYBOX_SIZE, -SKYBOX_SIZE, -SKYBOX_SIZE}},
+    {{-SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE}},
+    {{ SKYBOX_SIZE,  SKYBOX_SIZE, -SKYBOX_SIZE}},
+};
+
+static long SkyboxIndex[6][4] = {
+    {1, 0, 2, 3},     // near
+    {0, 4, 6, 2},     // left
+    {4, 5, 7, 6},     // far
+    {5, 1, 3, 7},     // right
+    {5, 4, 0, 1},     // top
+    {3, 2, 6, 7},     // bottom
+};
+
+// local clip flags (the retail CLIP_* set does not exist in this tree)
+#define SKY_CLIP_LEFT   1
+#define SKY_CLIP_RIGHT  2
+#define SKY_CLIP_TOP    4
+#define SKY_CLIP_BOTTOM 8
+#define SKY_CLIP_NEAR   16
+#define SKY_CLIP_FAR    32
+
+void RenderSkybox(void)
+{
+    long i, j, clip[8];
+    VERTEX_TEX1 vert[8];
+    MAT mat, viewmat;
+
+// setup draw verts
+
+    DrawVertsTEX1[0].tu = DrawVertsTEX1[3].tu = 0.0f;
+    DrawVertsTEX1[1].tu = DrawVertsTEX1[2].tu = 1.0f;
+    DrawVertsTEX1[0].tv = DrawVertsTEX1[1].tv = 0.0f;
+    DrawVertsTEX1[2].tv = DrawVertsTEX1[3].tv = 1.0f;
+
+    DrawVertsTEX1[0].sz = DrawVertsTEX1[1].sz =
+    DrawVertsTEX1[2].sz = DrawVertsTEX1[3].sz = 0.99999f;
+
+    DrawVertsTEX1[0].color = DrawVertsTEX1[1].color =
+    DrawVertsTEX1[2].color = DrawVertsTEX1[3].color = 0xffffffff;
+
+    DrawVertsTEX1[0].specular = DrawVertsTEX1[1].specular =
+    DrawVertsTEX1[2].specular = DrawVertsTEX1[3].specular = 0xff000000;
+
+// build a gravity-aligned frame (retail uses FLD_GravityVector; gravity is
+// straight down in this build, so DownVec serves the same purpose)
+
+    CopyVec(&DownVec, &mat.mv[U]);
+    SetVector(&mat.mv[R], mat.m[UY], -mat.m[UX], 0);
+    NormalizeVector(&mat.mv[R]);
+    CrossProduct(&mat.mv[R], &mat.mv[U], &mat.mv[L]);
+    CrossProduct(&mat.mv[U], &mat.mv[L], &mat.mv[R]);
+    MulMatrix(&ViewMatrixScaled, &mat, &viewmat);
+
+// transform each vert
+
+    for (i = 0 ; i < 8 ; i++)
+    {
+        RotTransPersVectorZleave(&viewmat, &ZeroVector, &SkyboxVerts[i], &vert[i].sx);
+
+        clip[i] = 0;
+        if (vert[i].sx < ScreenLeftClipGuard) clip[i] |= SKY_CLIP_LEFT;
+        else if (vert[i].sx > ScreenRightClipGuard) clip[i] |= SKY_CLIP_RIGHT;
+        if (vert[i].sy < ScreenTopClipGuard) clip[i] |= SKY_CLIP_TOP;
+        else if (vert[i].sy > ScreenBottomClipGuard) clip[i] |= SKY_CLIP_BOTTOM;
+        if (vert[i].rhw != 0.0f && (1.0f / vert[i].rhw) < RenderSettings.NearClip) clip[i] |= SKY_CLIP_NEAR;
+        else if (vert[i].sz >= 1) clip[i] |= SKY_CLIP_FAR;
+    }
+
+// render each side
+
+    ZCMP(D3DCMP_ALWAYS);
+
+    for (i = 0 ; i < 6 ; i++)
+    {
+        if (clip[SkyboxIndex[i][0]] & clip[SkyboxIndex[i][1]] &
+            clip[SkyboxIndex[i][2]] & clip[SkyboxIndex[i][3]])
+            continue;
+
+        for (j = 0 ; j < 4 ; j++)
+        {
+            DrawVertsTEX1[j].sx = vert[SkyboxIndex[i][j]].sx;
+            DrawVertsTEX1[j].sy = vert[SkyboxIndex[i][j]].sy;
+            DrawVertsTEX1[j].rhw = vert[SkyboxIndex[i][j]].rhw;
+        }
+
+        SET_TPAGE((short)(TPAGE_MISC3 + i));
+        D3Ddevice->DrawPrimitive(D3DPT_TRIANGLEFAN, FVF_TEX1, DrawVertsTEX1, 4, D3DDP_DONOTUPDATEEXTENTS);
+    }
+
+    ZCMP(D3DCMP_LESSEQUAL);
+}
