@@ -76,10 +76,12 @@ void CRD_CpuInput(CTRL *Control)
         sAirTime[slot] = 0.0f;
     }
 
-    // backing out of a wall / stuck spot
+    // backing out of a wall / stuck spot — steer alternately per car so a
+    // clump of stuck cars disperses instead of shuffling in place
     if (sReverseTime[slot] > 0.0f) {
         sReverseTime[slot] -= TimeStep;
         Control->dy = CTRL_RANGE_MAX;   // reverse
+        Control->dx = (signed char)((slot & 1) ? 90 : -90);
         return;
     }
 
@@ -149,12 +151,18 @@ void CRD_CpuInput(CTRL *Control)
     node = steerNode;
     player->CarAI.CurNode = node;
 
-    // target = the node's racing-line point (lerp across the track edges)
+    // target = the node's racing-line point (lerp across the track edges),
+    // plus a per-car lateral offset so the field spreads over the road
+    // instead of queueing single-file on the exact line
     VEC target, d;
     REAL t = node->RacingLine;
-    target.v[X] = node->Node[0].Pos.v[X] + (node->Node[1].Pos.v[X] - node->Node[0].Pos.v[X]) * t;
-    target.v[Y] = node->Node[0].Pos.v[Y] + (node->Node[1].Pos.v[Y] - node->Node[0].Pos.v[Y]) * t;
-    target.v[Z] = node->Node[0].Pos.v[Z] + (node->Node[1].Pos.v[Z] - node->Node[0].Pos.v[Z]) * t;
+    REAL lineOff = (((REAL)((slot * 53) % 100)) / 100.0f - 0.5f) * 90.0f;
+    target.v[X] = node->Node[0].Pos.v[X] + (node->Node[1].Pos.v[X] - node->Node[0].Pos.v[X]) * t
+                + node->RVec.v[X] * lineOff;
+    target.v[Y] = node->Node[0].Pos.v[Y] + (node->Node[1].Pos.v[Y] - node->Node[0].Pos.v[Y]) * t
+                + node->RVec.v[Y] * lineOff;
+    target.v[Z] = node->Node[0].Pos.v[Z] + (node->Node[1].Pos.v[Z] - node->Node[0].Pos.v[Z]) * t
+                + node->RVec.v[Z] * lineOff;
 
     // target bearing in car space
     SubVector(&target, &car->Body->Centre.Pos, &d);
@@ -162,6 +170,36 @@ void CRD_CpuInput(CTRL *Control)
     REAL fwd   = VecDotVec(&d, &car->Body->Centre.WMatrix.mv[L]);
     REAL angle = (REAL)atan2f(right, fwd);   // 0 = dead ahead, + = to the right
     REAL absAngle = (angle < 0) ? -angle : angle;
+
+    // car avoidance: steer around cars ahead of us and lift when right on
+    // someone's bumper (without this the whole field wedges into one pile)
+    {
+        PLAYER *other;
+        REAL avoid = 0.0f;
+        int blocked = 0;
+
+        for (other = PLR_PlayerHead; other; other = other->next) {
+            if (other == player || !other->car.Body) continue;
+            VEC od;
+            SubVector(&other->car.Body->Centre.Pos, &car->Body->Centre.Pos, &od);
+            REAL ofwd = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[L]);
+            if (ofwd < 0.0f || ofwd > 320.0f) continue;
+            REAL oside = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[R]);
+            if (oside > 100.0f || oside < -100.0f) continue;
+            // push away from the blocker, harder the closer it is
+            avoid += ((oside >= 0.0f) ? -1.0f : 1.0f) * (1.0f - ofwd / 320.0f);
+            if (ofwd < 150.0f) blocked = 1;
+        }
+
+        if (avoid > 1.0f) avoid = 1.0f;
+        if (avoid < -1.0f) avoid = -1.0f;
+        angle += avoid * 0.55f;
+        absAngle = (angle < 0) ? -angle : angle;
+
+        // bumper-to-bumper at speed difference -> lift so we slot in behind
+        if (blocked && fwdSpeed > 600.0f)
+            fwdSpeed += 400.0f;   // pretend we're faster: throttle logic eases off
+    }
 
     // target essentially behind us: three-point turn — reverse with mirrored
     // steering so the nose swings toward the target (skip stuck logic; this
@@ -183,6 +221,7 @@ void CRD_CpuInput(CTRL *Control)
     // flat out on straights, braking in time for slow corners
     REAL topSpeed = car->TopSpeed;
     if (topSpeed < 500.0f) topSpeed = 3000.0f;   // guard against odd car data
+    if (minFrac < 0.25f) minFrac = 0.25f;        // authored data must never park the car
     REAL targetVel = minFrac * topSpeed;
 
     if (absAngle > 1.0f)
@@ -232,12 +271,14 @@ void CRD_CpuInput(CTRL *Control)
                             (double)minFrac, (double)angle);
     }
 
-    // stuck: throttle on but barely moving -> back out for a second
+    // stuck: throttle on but barely moving -> back out (trigger fast, and
+    // stagger the reverse duration per car so a pile-up untangles instead
+    // of the whole clump reversing and advancing in lockstep)
     if (absSpeed < 48.0f && Control->dy < 0) {
         sStuckTime[slot] += TimeStep;
-        if (sStuckTime[slot] > 2.0f) {
+        if (sStuckTime[slot] > 1.2f) {
             sStuckTime[slot] = 0.0f;
-            sReverseTime[slot] = 1.0f;
+            sReverseTime[slot] = 0.7f + (REAL)((slot * 29) % 70) / 100.0f;
         }
     } else {
         sStuckTime[slot] = 0.0f;
