@@ -172,6 +172,16 @@ typedef struct {
 	VEC LightPos;
 } STROBE_OBJ;
 
+// ANDROID_PORT: retail object thrower (rvsource/Xbox/Src/obj_init.h) — a
+// launcher placed in the level that hurls an object (the basketballs in
+// Toys in the Hood) when a car drives through its matching trigger zone
+typedef struct {
+	long ID;
+	long ObjectType;
+	REAL Speed;
+	long ReUse;
+} OBJECT_THROWER_OBJ;
+
 typedef struct {
 } SPACEMAN_OBJ;
 

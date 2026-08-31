@@ -32,6 +32,14 @@ enum {
 #endif
 	TRIGGER_CAMCHANGE,
 	TRIGGER_AIHOME,
+	// ANDROID_PORT: the retail level data (.tri) uses these trigger types too
+	// — IDs 5, 6 and 8 appear 27 times across the tracks. This 1999 enum
+	// stopped at AIHOME, so LoadTriggers was indexing TriggerInfo[] past its
+	// end for every one of them. Names/order from rvsource/Xbox/Src/trigger.h.
+	TRIGGER_CAMSHORTEN,
+	TRIGGER_OBJECTTHROWER,
+	TRIGGER_GAPCAM,
+	TRIGGER_REPOSITION_CAR,
 #ifndef _N64
 	TRIGGER_NUM
 #endif

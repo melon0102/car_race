@@ -1,4 +1,6 @@
 
+extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT
+
 #include "revolt.h"
 #include "trigger.h"
 #include "edittrig.h"
@@ -7,6 +9,7 @@
 #include "car.h"
 #include "ctrlread.h"
 #include "object.h"
+#include "obj_init.h"   // ANDROID_PORT: object thrower
 #include "control.h"
 #include "player.h"
 #include "piano.h"
@@ -28,6 +31,8 @@ TRIGGER *Triggers;
 
 // trigger info - handler, local only
 
+void TriggerObjectThrower(PLAYER *player, long flag, long n, VEC *vec);   // ANDROID_PORT
+
 static TRIGGER_INFO TriggerInfo[] = {
 	TriggerPiano, FALSE,
 	TriggerSplit, TRUE,
@@ -35,8 +40,19 @@ static TRIGGER_INFO TriggerInfo[] = {
 #ifdef _PC
 	TriggerCamera, FALSE,
 	CAI_TriggerAiHome, TRUE,
+	// ANDROID_PORT: retail trigger types used by the level data. NULL entries
+	// are accepted and ignored rather than read past the end of the table.
+	NULL, FALSE,                  // CAMSHORTEN  (camera tweak, not ported)
+	TriggerObjectThrower, FALSE,  // OBJECTTHROWER — launches the basketballs
+	NULL, FALSE,                  // GAPCAM      (camera tweak, not ported)
+	NULL, FALSE,                  // REPOSITION_CAR
 #endif
 };
+
+#ifdef _PC
+static_assert(sizeof(TriggerInfo) / sizeof(TriggerInfo[0]) == TRIGGER_NUM,
+              "TriggerInfo must have exactly one entry per TRIGGER_*");   // ANDROID_PORT
+#endif
 
 ///////////////////
 // load triggers //
@@ -97,8 +113,19 @@ void LoadTriggers(char *file)
 		Triggers[i].ID = ftri.ID;
 		Triggers[i].Flag = ftri.Flag;
 		Triggers[i].GlobalFirst = TRUE;
-		Triggers[i].Function = TriggerInfo[ftri.ID].Func;
-		Triggers[i].LocalPlayerOnly = TriggerInfo[ftri.ID].LocalPlayerOnly;
+		// ANDROID_PORT: bounds check — the retail data carries trigger IDs
+		// this build may not know, and the original read straight past the
+		// end of TriggerInfo[]
+		if (ftri.ID >= 0 && ftri.ID < TRIGGER_NUM)
+		{
+			Triggers[i].Function = TriggerInfo[ftri.ID].Func;
+			Triggers[i].LocalPlayerOnly = TriggerInfo[ftri.ID].LocalPlayerOnly;
+		}
+		else
+		{
+			Triggers[i].Function = NULL;
+			Triggers[i].LocalPlayerOnly = FALSE;
+		}
 
 // set XYZ size
 
@@ -319,7 +346,8 @@ void CheckTriggers(void)
 // loop thru all triggers
 
 	trigger = Triggers;
-	for (i = 0 ; i < TriggerNum ; i++, trigger++) if (trigger->ID < TRIGGER_NUM)
+	// ANDROID_PORT: also skip known-but-unimplemented types (NULL handler)
+	for (i = 0 ; i < TriggerNum ; i++, trigger++) if (trigger->ID < TRIGGER_NUM && trigger->Function)
 	{
 
 // loop thru players
@@ -379,4 +407,44 @@ void ResetTriggerFlags(long ID)
 			Triggers[i].GlobalFirst = TRUE;
 		}
 	}
+}
+
+////////////////////////////////////////////////////////////////
+//
+// ANDROID_PORT: TriggerObjectThrower — ported from the retail Xbox tree
+// (rvsource/Xbox/Src/trigger.cpp). Finds the thrower object carrying this
+// trigger ID, spawns its configured object at the thrower position and
+// launches it along the thrower Look vector.
+//
+////////////////////////////////////////////////////////////////
+
+void TriggerObjectThrower(PLAYER *player, long flag, long n, VEC *vec)
+{
+    OBJECT *obj, *newObj;
+    OBJECT_THROWER_OBJ *objThrower;
+
+    // only once per level
+    if (!(flag & TRIGGER_GLOBAL_FIRST)) return;
+
+    for (obj = OBJ_ObjectHead; obj != NULL; obj = obj->next)
+    {
+        if (obj->Type != OBJECT_TYPE_OBJECT_THROWER) continue;
+
+        objThrower = (OBJECT_THROWER_OBJ*)obj->Data;
+        if (!objThrower || objThrower->ID != n) continue;
+
+        newObj = NULL;
+        if (objThrower->ObjectType >= 0 && objThrower->ObjectType < OBJECT_TYPE_MAX)
+            newObj = CreateObject(&obj->body.Centre.Pos, &obj->body.Centre.WMatrix,
+                                  objThrower->ObjectType, NULL);
+
+        if (newObj != NULL && objThrower->Speed > 0)
+        {
+            VecEqScalarVec(&newObj->body.Centre.Vel, objThrower->Speed * 50,
+                           &obj->body.Centre.WMatrix.mv[L]);
+            DbgPrintf("THROW OBJ TYPE %d", (int)objThrower->ObjectType);
+        }
+
+        return;
+    }
 }

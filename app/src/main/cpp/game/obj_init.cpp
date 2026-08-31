@@ -103,6 +103,7 @@ static long InitPacket(OBJECT *obj, long *flags);
 static long InitAbcBlock(OBJECT *obj, long *flags);
 static long InitBasketball(OBJECT *obj, long *flags);
 static long InitLantern(OBJECT *obj, long *flags);
+static long InitObjectThrower(OBJECT *obj, long *flags);
 
 
 static OBJECT_INIT_DATA ObjInitData[] = {
@@ -161,7 +162,7 @@ static OBJECT_INIT_DATA ObjInitData[] = {
 	NULL, 0,                       // NAMEWHEEL
 	NULL, 0,                       // SPRINKLER
 	NULL, 0,                       // SPRINKLER_HOSE
-	NULL, 0,                       // OBJECT_THROWER
+	InitObjectThrower, sizeof(OBJECT_THROWER_OBJ),   // OBJECT_THROWER
 	InitBasketball, 0,             // BASKETBALL
 	NULL, 0,                       // TRACKSCREEN
 	NULL, 0,                       // CLOCK
@@ -2215,6 +2216,43 @@ static long InitLantern(OBJECT *obj, long *flags)
 {
     (void)flags;
     return InitStaticProp(obj, LEVEL_MODEL_LANTERN);
+}
+
+#endif
+
+#ifdef _PC
+
+/////////////////////////////////////////////////////////////////////
+// ANDROID_PORT: object thrower (ported from the retail Xbox tree)
+//
+// A launcher placed in the level. It draws nothing and never collides; when
+// a car crosses the trigger zone carrying its ID, TriggerObjectThrower (in
+// trigger.cpp) spawns the configured object here and fires it along the
+// thrower Look vector. In Toys in the Hood these are the basketballs.
+//
+// Like retail, throwers are disabled in time trial: they only arm in a race.
+/////////////////////////////////////////////////////////////////////
+
+static long InitObjectThrower(OBJECT *obj, long *flags)
+{
+    OBJECT_THROWER_OBJ *objThrower = (OBJECT_THROWER_OBJ*)obj->Data;
+
+    if (GameSettings.GameType == GAMETYPE_TRIAL)
+        return FALSE;
+
+    objThrower->ID = flags[0];
+    objThrower->ObjectType = flags[1];
+    objThrower->Speed = (REAL)flags[2];
+    objThrower->ReUse = flags[3];
+
+    obj->CollType = COLL_TYPE_NONE;
+    obj->body.CollSkin.AllowObjColls = FALSE;
+    obj->body.CollSkin.AllowWorldColls = FALSE;
+
+    DbgPrintf("THROWER ID %d TYPE %d SPD %d", (int)objThrower->ID,
+              (int)objThrower->ObjectType, (int)objThrower->Speed);
+
+    return TRUE;
 }
 
 #endif
