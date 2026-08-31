@@ -14,6 +14,8 @@
  *
  *********************************************************************************************/
 
+extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT
+
 #include "revolt.h"
 #ifndef _PSX
 #include "main.h"
@@ -344,6 +346,7 @@ static void s_LoadTrackData(void)
 	// load instances (must be before lights!)
 	LoadInstanceModels();
 	LoadInstances(GetLevelFilename("fin", FILENAME_MAKE_BODY | FILENAME_GAME_SETTINGS));
+	DbgPrintf("INSTANCES %d (RENDER %d)", (int)InstanceNum, (int)RenderSettings.Instance);   // ANDROID_PORT
 	BuildInstanceCollPolys();
 
 	// Load collision polygon data (must be after instances!)

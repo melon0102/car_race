@@ -87,6 +87,21 @@ void GetRegistrySettings(void)
     RegistrySettings.TextureBpp = 24;   // picks the 24/32-bit format branch
     strcpy(RegistrySettings.PlayerName, "PLAYER");
     strcpy(RegistrySettings.LevelDir, "NHOOD1");   // starting level; FindLevels stores dir names UPPERCASED
+
+    // ANDROID_PORT: registry.cpp (not compiled — this function replaces it)
+    // also fed these across into RenderSettings. Without the copy they all
+    // stayed zero, which silently disabled environment mapping, car shadows,
+    // dynamic lighting, skid marks AND level instance rendering — the last of
+    // those culls every non-priority instance, i.e. the parked cars, bins,
+    // lampposts and trees that dress the tracks.
+    RenderSettings.Env      = RegistrySettings.EnvFlag;
+    RenderSettings.Shadow   = RegistrySettings.ShadowFlag;
+    RenderSettings.Light    = RegistrySettings.LightFlag;
+    RenderSettings.Instance = RegistrySettings.InstanceFlag;
+    RenderSettings.Skid     = RegistrySettings.SkidFlag;
+    RenderSettings.Mirror   = RegistrySettings.MirrorFlag;   // left off by default
+    GameSettings.AutoBrake  = RegistrySettings.AutoBrake;
+    GameSettings.CarID      = RegistrySettings.CarID;
 }
 
 void SetRegistrySettings(void)
