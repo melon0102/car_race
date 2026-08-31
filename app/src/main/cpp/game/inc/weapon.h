@@ -32,7 +32,11 @@
 
 #define DROPPER_GAP 64.0f
 
-#define ELECTRO_RANGE 192.0f
+// ANDROID_PORT: the 1999 dev build used 192; retail doubled it to 384
+// (rvsource/Xbox/Src/weapon.h), which is why the tesla only connected when
+// you were almost touching the other car. The effect model is built from the
+// car body and is not scaled by this, so the visual is unchanged in retail too.
+#define ELECTRO_RANGE 384.0f
 #define ELECTRO_KILL_TIME 3.0f
 
 #define CHROMEBALL_MIN_RAD 4.0f
