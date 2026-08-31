@@ -342,6 +342,15 @@ HANDLE FindFirstFile(LPCSTR pattern, LPWIN32_FIND_DATA data)
         strcpy(fs->pattern, "*");
 
     fs->dir = opendir(fs->dirpath);
+    if (!fs->dir) {
+        // ANDROID_PORT: same fallback rv_fopen uses — the game builds these
+        // paths from LevelInf[].Dir, which FindLevels stores UPPERCASED
+        // ("levels\NHOOD1\*.prm"), while the staged assets are all lowercase.
+        // Without this, LoadInstanceModels found nothing and every level lost
+        // its instances: parked cars, trees, lampposts, bins, barriers, ramps.
+        _strlwr(fs->dirpath);
+        fs->dir = opendir(fs->dirpath);
+    }
     if (!fs->dir) { free(fs); return INVALID_HANDLE_VALUE; }
 
     if (!FindFill(fs, data)) {
