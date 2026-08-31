@@ -61,6 +61,26 @@ void CRD_CpuInput(CTRL *Control)
     if (sDirSign[slot] == 0.0f)
         sDirSign[slot] = 1.0f;
 
+    // per-driver personality (retail keeps a per-car CAI_SKILLS table — here
+    // a deterministic profile per grid slot): pace, braking caution, steering
+    // aggression and how far ahead they read the track
+    static const struct {
+        REAL speedScale, brakeMargin, steerGain, lookScale;
+    } kDrivers[8] = {
+        { 1.00f, 1.15f, 1.00f, 1.00f },   // balanced
+        { 0.97f, 1.22f, 0.92f, 1.10f },   // careful
+        { 1.03f, 1.10f, 1.08f, 0.90f },   // aggressive
+        { 0.94f, 1.30f, 0.85f, 1.20f },   // cautious tourer
+        { 1.01f, 1.12f, 1.05f, 0.95f },   // quick
+        { 0.96f, 1.25f, 0.90f, 1.05f },   // steady
+        { 1.05f, 1.08f, 1.12f, 0.85f },   // hothead
+        { 0.92f, 1.35f, 0.80f, 1.15f },   // backmarker
+    };
+    const REAL drvSpeedScale = kDrivers[slot & 7].speedScale;
+    const REAL drvBrakeMargin = kDrivers[slot & 7].brakeMargin;
+    const REAL drvSteerGain = kDrivers[slot & 7].steerGain;
+    const REAL drvLookScale = kDrivers[slot & 7].lookScale;
+
     REAL fwdSpeed = VecDotVec(&car->Body->Centre.Vel, &car->Body->Centre.WMatrix.mv[L]);
     REAL absSpeed = (fwdSpeed < 0) ? -fwdSpeed : fwdSpeed;
 
@@ -87,8 +107,8 @@ void CRD_CpuInput(CTRL *Control)
 
     // look-ahead point on the racing line (short enough to actually follow
     // the line through corners, like the retail AI)
-    REAL lookahead = 256.0f + absSpeed * 0.25f;
-    if (lookahead > 1024.0f) lookahead = 1024.0f;
+    REAL lookahead = (256.0f + absSpeed * 0.25f) * drvLookScale;
+    if (lookahead > 1200.0f) lookahead = 1200.0f;
     // corner scan window: how far ahead we look for authored slow zones —
     // grows with speed so braking starts early enough (retail
     // CAI_CalcBrakingParameters: brake point moves up for slower corners)
@@ -130,7 +150,9 @@ void CRD_CpuInput(CTRL *Control)
         fwdDir.v[Y] = -node->RVec.v[Y] * sDirSign[slot];
         fwdDir.v[Z] = -node->RVec.v[X] * sDirSign[slot];
 
-        // neighbor that advances furthest along the race direction
+        // neighbor that advances furthest along the race direction; at forks
+        // (both Next links valid) each driver prefers a different branch so
+        // the field doesn't all take the same route
         AINODE *cand[4] = { node->Next[0], node->Next[1], node->Prev[0], node->Prev[1] };
         AINODE *fwd = NULL;
         REAL best = 0.0f;
@@ -139,6 +161,7 @@ void CRD_CpuInput(CTRL *Control)
             VEC step;
             SubVector(&cand[c]->Centre, &node->Centre, &step);
             REAL along = VecDotVec(&step, &fwdDir);
+            if (c < 2 && (long)(c) == (slot & 1)) along *= 1.2f;   // route preference
             if (along > best) { best = along; fwd = cand[c]; }
         }
         if (!fwd)
@@ -211,7 +234,7 @@ void CRD_CpuInput(CTRL *Control)
 
     // steering: retail-style sqrt response — strong correction for small
     // errors, saturating at full lock around ~35 degrees off the line
-    REAL steerMag = (REAL)sqrtf(absAngle / 0.6f) * 127.0f;
+    REAL steerMag = (REAL)sqrtf(absAngle / 0.6f) * 127.0f * drvSteerGain;
     if (steerMag > 127.0f) steerMag = 127.0f;
     Control->dx = (signed char)(long)((angle > 0) ? steerMag : -steerMag);
 
@@ -225,12 +248,27 @@ void CRD_CpuInput(CTRL *Control)
     REAL targetVel = (minSpeedMph >= 999.0f)
                    ? topSpeed
                    : minSpeedMph * MPH2OGU_SPEED;
-    if (targetVel > topSpeed) targetVel = topSpeed;
+
+    // per-driver pace, plus retail-style catch-up: cars behind the human
+    // push a little harder, cars far ahead ease off — keeps the field racing
+    targetVel *= drvSpeedScale;
+    if (PLR_LocalPlayer && PLR_LocalPlayer != player && AiNodeTotalDist > 1.0f) {
+        REAL gap = player->CarAI.FinishDist - PLR_LocalPlayer->CarAI.FinishDist;
+        if (gap > AiNodeTotalDist * 0.5f) gap -= AiNodeTotalDist;
+        else if (gap < -AiNodeTotalDist * 0.5f) gap += AiNodeTotalDist;
+        // gap > 0 = behind the player (finish dist runs down toward the line)
+        REAL boost = gap * 0.00003f;
+        if (boost > 0.08f) boost = 0.08f;
+        if (boost < -0.08f) boost = -0.08f;
+        targetVel *= (1.0f + boost);
+    }
+
+    if (targetVel > topSpeed * 1.02f) targetVel = topSpeed * 1.02f;
     if (targetVel < 15.0f * MPH2OGU_SPEED) targetVel = 15.0f * MPH2OGU_SPEED;  // floor ~15mph
 
     if (absAngle > 1.0f)
         Control->dy = -(CTRL_RANGE_MAX / 4);         // way off line: creep and turn
-    else if (fwdSpeed > targetVel * 1.15f && fwdSpeed > 800.0f)
+    else if (fwdSpeed > targetVel * drvBrakeMargin && fwdSpeed > 800.0f)
         Control->dy = CTRL_RANGE_MAX;                // brake for the corner (never at a crawl)
     else if (fwdSpeed > targetVel)
         Control->dy = 0;                             // coast down to corner speed
