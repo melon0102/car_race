@@ -105,13 +105,12 @@ void CRD_CpuInput(CTRL *Control)
     AINODE *node = &AiNode[idx];
     AINODE *steerNode = NULL;
     REAL walked = 0.0f;
-    REAL minFrac = 1.0f;
+    REAL minSpeedMph = 1000.0f;   // authored node speeds are MPH (0 = unauthored)
 
     for (long iter = 0; iter < 64; iter++) {
-        // authored per-node corner speed, 0..MAX_AINODE_SPEED (0 = unauthored)
         if (node->RacingLineSpeed > 0 && walked <= brakeWindow) {
-            REAL frac = (REAL)node->RacingLineSpeed / (REAL)MAX_AINODE_SPEED;
-            if (frac < minFrac) minFrac = frac;
+            REAL s = (REAL)node->RacingLineSpeed;
+            if (s < minSpeedMph) minSpeedMph = s;
         }
 
         VEC toNode;
@@ -218,16 +217,21 @@ void CRD_CpuInput(CTRL *Control)
 
     // throttle from the AUTHORED corner speeds (retail behavior): the slowest
     // racing-line speed inside the braking window sets the target velocity —
-    // flat out on straights, braking in time for slow corners
+    // flat out on straights, braking in time for slow corners.
+    // Node speeds are in MPH (convert!), not fractions — treating them as
+    // fractions had the whole field lurching around walking pace.
     REAL topSpeed = car->TopSpeed;
     if (topSpeed < 500.0f) topSpeed = 3000.0f;   // guard against odd car data
-    if (minFrac < 0.25f) minFrac = 0.25f;        // authored data must never park the car
-    REAL targetVel = minFrac * topSpeed;
+    REAL targetVel = (minSpeedMph >= 999.0f)
+                   ? topSpeed
+                   : minSpeedMph * MPH2OGU_SPEED;
+    if (targetVel > topSpeed) targetVel = topSpeed;
+    if (targetVel < 15.0f * MPH2OGU_SPEED) targetVel = 15.0f * MPH2OGU_SPEED;  // floor ~15mph
 
     if (absAngle > 1.0f)
         Control->dy = -(CTRL_RANGE_MAX / 4);         // way off line: creep and turn
-    else if (fwdSpeed > targetVel * 1.15f)
-        Control->dy = CTRL_RANGE_MAX;                // brake for the corner
+    else if (fwdSpeed > targetVel * 1.15f && fwdSpeed > 800.0f)
+        Control->dy = CTRL_RANGE_MAX;                // brake for the corner (never at a crawl)
     else if (fwdSpeed > targetVel)
         Control->dy = 0;                             // coast down to corner speed
     else
@@ -265,10 +269,10 @@ void CRD_CpuInput(CTRL *Control)
     static long sBeat = 0;
     if ((sBeat++ % 120) == 0) {
         __android_log_print(4 /*INFO*/, "revolt-ai",
-                            "cpu slot %ld: node %ld dx %d dy %d speed %.0f/%.0f frac %.2f angle %.2f",
+                            "cpu slot %ld: node %ld dx %d dy %d speed %.0f/%.0f mph %.0f angle %.2f",
                             slot, (long)(node - AiNode), (int)Control->dx,
                             (int)Control->dy, (double)fwdSpeed, (double)targetVel,
-                            (double)minFrac, (double)angle);
+                            (double)minSpeedMph, (double)angle);
     }
 
     // stuck: throttle on but barely moving -> back out (trigger fast, and
