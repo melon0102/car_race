@@ -65,6 +65,17 @@ enum {
 	LEVEL_MODEL_CHROMEBALL,
 	LEVEL_MODEL_WATERBOMB,
 	LEVEL_MODEL_BOMBBALL,
+
+	// ANDROID_PORT: models for the retail scenery props (see object.h).
+	// MUST stay in the same order as LevelModelList[] in model.cpp.
+	LEVEL_MODEL_TRAFFICCONE,
+	LEVEL_MODEL_N2TRAFFICCONE,
+	LEVEL_MODEL_BASKETBALL,
+	LEVEL_MODEL_BOTTLE,
+	LEVEL_MODEL_BUCKET,
+	LEVEL_MODEL_PACKET,
+	LEVEL_MODEL_ABCBLOCK,
+	LEVEL_MODEL_LANTERN,
 };
 
 #define ModelAddGouraud(_a, _b, _c) \

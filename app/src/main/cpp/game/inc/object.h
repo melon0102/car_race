@@ -102,6 +102,52 @@ enum {
 	OBJECT_TYPE_SPLASH,
 	OBJECT_TYPE_BOMBGLOW,
 
+	// ANDROID_PORT: the retail level data (levels/*/*.fob, 2002) references
+	// object types this 1999 enum stopped short of, so CreateObject rejected
+	// every one of them (`if (ID >= OBJECT_TYPE_MAX) return NULL`) and the
+	// props simply never appeared — traffic cones, sprinklers, the basketball
+	// thrower, skyboxes, bottles... Names and ORDER taken from the retail
+	// enum in rvsource/Xbox/Src/obj_init.h; indices 0-35 already matched
+	// exactly, so this is a pure continuation. Entries with no init function
+	// yet are created as empty objects (harmless) rather than rejected.
+	OBJECT_TYPE_WEEBEL,
+	OBJECT_TYPE_PROBELOGO,
+	OBJECT_TYPE_CLOUDS,
+	OBJECT_TYPE_NAMEWHEEL,
+	OBJECT_TYPE_SPRINKLER,
+	OBJECT_TYPE_SPRINKLER_HOSE,
+	OBJECT_TYPE_OBJECT_THROWER,
+	OBJECT_TYPE_BASKETBALL,
+	OBJECT_TYPE_TRACKSCREEN,
+	OBJECT_TYPE_CLOCK,
+	OBJECT_TYPE_CARBOX,
+	OBJECT_TYPE_STREAM,
+	OBJECT_TYPE_CUP,
+	OBJECT_TYPE_3DSOUND,
+	OBJECT_TYPE_STAR,
+	OBJECT_TYPE_FOX,
+	OBJECT_TYPE_TUMBLEWEED,
+	OBJECT_TYPE_SMALLSCREEN,
+	OBJECT_TYPE_LANTERN,
+	OBJECT_TYPE_SKYBOX,
+	OBJECT_TYPE_SLIDER,
+	OBJECT_TYPE_BOTTLE,
+	OBJECT_TYPE_BUCKET,
+	OBJECT_TYPE_CONE,
+	OBJECT_TYPE_CAN,
+	OBJECT_TYPE_LILO,
+	OBJECT_TYPE_GLOBAL,
+	OBJECT_TYPE_RAIN,
+	OBJECT_TYPE_LIGHTNING,
+	OBJECT_TYPE_SHIPLIGHT,
+	OBJECT_TYPE_PACKET,
+	OBJECT_TYPE_ABC,
+	OBJECT_TYPE_WATERBOX,
+	OBJECT_TYPE_RIPPLE,
+	OBJECT_TYPE_FLAG,
+	OBJECT_TYPE_DOLPHIN,
+	OBJECT_TYPE_GARDEN_FOG,
+
 	OBJECT_TYPE_MAX
 };
 

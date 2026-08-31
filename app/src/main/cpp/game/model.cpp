@@ -92,6 +92,17 @@ static char *LevelModelList[] = {
 	"models\\ball",
 	"models\\wbomb",
 	"models\\ball",
+
+	// ANDROID_PORT: retail scenery props — order must match the
+	// LEVEL_MODEL_* additions in model.h
+	"models\\trafficcone",
+	"models\\n2trafficcone",
+	"models\\basketball",
+	"models\\bottle",
+	"models\\bucket",
+	"models\\packet",
+	"models\\abcblock",
+	"models\\lantern",
 };
 
 //////////////////

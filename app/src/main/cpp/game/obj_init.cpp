@@ -38,6 +38,8 @@
 #include "spark.h"
 #include "field.h"
 #include "weapon.h"
+
+extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT: on-screen/logcat ticker
 #ifdef _PC
 #include "input.h"
 #endif
@@ -93,6 +95,15 @@ static long InitFlap(OBJECT *obj, long *flags);
 static long InitLaser(OBJECT *obj, long *flags);
 static long InitSplash(OBJECT *obj, long *flags);
 
+// ANDROID_PORT: retail scenery props (see the enum note in object.h)
+static long InitCone(OBJECT *obj, long *flags);
+static long InitBottle(OBJECT *obj, long *flags);
+static long InitBucket(OBJECT *obj, long *flags);
+static long InitPacket(OBJECT *obj, long *flags);
+static long InitAbcBlock(OBJECT *obj, long *flags);
+static long InitBasketball(OBJECT *obj, long *flags);
+static long InitLantern(OBJECT *obj, long *flags);
+
 
 static OBJECT_INIT_DATA ObjInitData[] = {
 	InitBarrel, sizeof(BARREL_OBJ),
@@ -139,8 +150,57 @@ static OBJECT_INIT_DATA ObjInitData[] = {
 	InitLaser, sizeof(LASER_OBJ),
 	InitSplash, sizeof(SPLASH_OBJ),
 	InitBombGlow, 0,
+
+	// ANDROID_PORT: retail scenery props — one entry per OBJECT_TYPE_* added
+	// in object.h, in the SAME ORDER. NULL entries are types the retail data
+	// references but we have not implemented yet: CreateObject makes an empty
+	// object for them (draws nothing) instead of rejecting the whole entry.
+	NULL, 0,                       // WEEBEL
+	NULL, 0,                       // PROBELOGO
+	NULL, 0,                       // CLOUDS
+	NULL, 0,                       // NAMEWHEEL
+	NULL, 0,                       // SPRINKLER
+	NULL, 0,                       // SPRINKLER_HOSE
+	NULL, 0,                       // OBJECT_THROWER
+	InitBasketball, 0,             // BASKETBALL
+	NULL, 0,                       // TRACKSCREEN
+	NULL, 0,                       // CLOCK
+	NULL, 0,                       // CARBOX
+	NULL, 0,                       // STREAM
+	NULL, 0,                       // CUP
+	NULL, 0,                       // 3DSOUND (invisible ambient emitter)
+	NULL, 0,                       // STAR
+	NULL, 0,                       // FOX
+	NULL, 0,                       // TUMBLEWEED
+	NULL, 0,                       // SMALLSCREEN
+	InitLantern, 0,                // LANTERN
+	NULL, 0,                       // SKYBOX
+	NULL, 0,                       // SLIDER
+	InitBottle, 0,                 // BOTTLE
+	InitBucket, 0,                 // BUCKET
+	InitCone, 0,                   // CONE
+	NULL, 0,                       // CAN
+	NULL, 0,                       // LILO
+	NULL, 0,                       // GLOBAL
+	NULL, 0,                       // RAIN
+	NULL, 0,                       // LIGHTNING
+	NULL, 0,                       // SHIPLIGHT
+	InitPacket, 0,                 // PACKET
+	InitAbcBlock, 0,               // ABC
+	NULL, 0,                       // WATERBOX
+	NULL, 0,                       // RIPPLE
+	NULL, 0,                       // FLAG
+	NULL, 0,                       // DOLPHIN
+	NULL, 0,                       // GARDEN_FOG
 #endif
 };
+
+#ifdef _PC
+// ANDROID_PORT: the table is indexed directly by object type, so a missing or
+// extra entry silently shifts every later object to the wrong init function.
+static_assert(sizeof(ObjInitData) / sizeof(ObjInitData[0]) == OBJECT_TYPE_MAX,
+              "ObjInitData must have exactly one entry per OBJECT_TYPE_*");
+#endif
 
 /////////////////////////////////
 // load and init level objects //
@@ -169,20 +229,29 @@ void LoadObjects(char *file)
 
 	fread(&i, sizeof(i), 1, fp);
 
-	for ( ; i ; i--)
 	{
+		long made = 0, failed = 0, total = i;   // ANDROID_PORT: load diagnostics
+
+		for ( ; i ; i--)
+		{
 
 // read file obj
 
-		fread(&fileobj, sizeof(fileobj), 1, fp);
+			fread(&fileobj, sizeof(fileobj), 1, fp);
 
 // init object
 
-		CopyVec(&fileobj.Up, &mat.mv[U]);
-		CopyVec(&fileobj.Look, &mat.mv[L]);
-		CrossProduct(&mat.mv[U], &mat.mv[L], &mat.mv[R]);
+			CopyVec(&fileobj.Up, &mat.mv[U]);
+			CopyVec(&fileobj.Look, &mat.mv[L]);
+			CrossProduct(&mat.mv[U], &mat.mv[L], &mat.mv[R]);
 
-		CreateObject(&fileobj.Pos, &mat, fileobj.ID, fileobj.Flag);
+			if (CreateObject(&fileobj.Pos, &mat, fileobj.ID, fileobj.Flag))
+				made++;
+			else
+				failed++;
+		}
+
+		DbgPrintf("LEVEL OBJECTS %d/%d (%d FAILED)", (int)made, (int)total, (int)failed);
 	}
 
 // close file
@@ -1982,4 +2051,170 @@ long LoadOneLevelModel(long id, long UseMRGBper, struct renderflags renderflag, 
 
 	return -1;
 }
+#endif
+
+#ifdef _PC
+
+/////////////////////////////////////////////////////////////////////
+// ANDROID_PORT: retail scenery props
+//
+// The retail level data places physics props (traffic cones, bottles,
+// buckets, packets, alphabet blocks, basketballs) and static dressing
+// (lanterns) for which this 1999 codebase had no object types, so they were
+// rejected outright and never appeared. These follow the same shape as
+// InitBeachball above: load the model, adopt the collision hull that the
+// model loader already reads from the matching .hul file, and let
+// MOV_MoveBody move it so cars can knock it around. The mass and friction
+// values come from InitCone in the retail tree
+// (rvsource/Xbox/Src/obj_init.cpp).
+/////////////////////////////////////////////////////////////////////
+
+static long InitHullProp(OBJECT *obj, long model, REAL mass, REAL inertia)
+{
+    obj->DefaultModel = LoadOneLevelModel(model, TRUE, obj->renderflag, 0);
+    if (obj->DefaultModel == -1)
+        return FALSE;
+
+    obj->renderflag.envmap = TRUE;
+    obj->EnvRGB = 0x404040;
+
+    // no hull shipped with the model: render it as static dressing
+    if (!LevelModel[obj->DefaultModel].CollSkin.NConvex &&
+        !LevelModel[obj->DefaultModel].CollSkin.NSpheres)
+    {
+        obj->CollType = COLL_TYPE_NONE;
+        obj->movehandler = NULL;
+        obj->collhandler = NULL;
+        return TRUE;
+    }
+
+    obj->CollType = COLL_TYPE_BODY;
+    obj->collhandler = (COLL_HANDLER)COL_BodyCollHandler;
+    obj->movehandler = (MOVE_HANDLER)MOV_MoveBody;
+
+    obj->body.Centre.Mass = mass;
+    obj->body.Centre.InvMass = ONE / mass;
+    SetMat(&obj->body.BodyInertia, inertia, ZERO, ZERO, ZERO, inertia, ZERO, ZERO, ZERO, inertia);
+    SetMat(&obj->body.BodyInvInertia, ONE / inertia, ZERO, ZERO, ZERO, ONE / inertia, ZERO, ZERO, ZERO, ONE / inertia);
+
+    obj->body.Centre.Hardness = Real(0.0);
+    obj->body.Centre.Resistance = Real(0.008);
+    obj->body.DefaultAngRes = Real(0.001);
+    obj->body.AngResistance = Real(0.001);
+    obj->body.AngResMod = Real(1.0);
+    obj->body.Centre.Grip = Real(0.008);
+    obj->body.Centre.StaticFriction = Real(0.6);
+    obj->body.Centre.KineticFriction = Real(0.4);
+    obj->body.Centre.Boost = ZERO;
+
+    SetBodyConvex(&obj->body);
+    obj->body.CollSkin.AllowObjColls = TRUE;
+    obj->body.CollSkin.NConvex = LevelModel[obj->DefaultModel].CollSkin.NConvex;
+    obj->body.CollSkin.NSpheres = LevelModel[obj->DefaultModel].CollSkin.NSpheres;
+    obj->body.CollSkin.Convex = LevelModel[obj->DefaultModel].CollSkin.Convex;
+    obj->body.CollSkin.Sphere = LevelModel[obj->DefaultModel].CollSkin.Sphere;
+    CopyBBox(&LevelModel[obj->DefaultModel].CollSkin.TightBBox, &obj->body.CollSkin.TightBBox);
+    CreateCopyCollSkin(&obj->body.CollSkin);
+    BuildWorldSkin(&obj->body.CollSkin, &obj->body.Centre.Pos, &obj->body.Centre.WMatrix);
+
+    return TRUE;
+}
+
+static long InitSphereProp(OBJECT *obj, long model, REAL mass, REAL radius)
+{
+    obj->DefaultModel = LoadOneLevelModel(model, TRUE, obj->renderflag, 0);
+    if (obj->DefaultModel == -1)
+        return FALSE;
+
+    obj->renderflag.envmap = FALSE;
+    obj->EnvRGB = 0x202000;
+
+    obj->CollType = COLL_TYPE_BODY;
+    obj->collhandler = (COLL_HANDLER)COL_BodyCollHandler;
+    obj->movehandler = (MOVE_HANDLER)MOV_MoveBody;
+
+    obj->body.Centre.Mass = mass;
+    obj->body.Centre.InvMass = ONE / mass;
+    SetMat(&obj->body.BodyInertia, Real(100), ZERO, ZERO, ZERO, Real(100), ZERO, ZERO, ZERO, Real(100));
+    SetMat(&obj->body.BodyInvInertia, ONE / Real(100), ZERO, ZERO, ZERO, ONE / Real(100), ZERO, ZERO, ZERO, ONE / Real(100));
+
+    obj->body.Centre.Hardness = Real(0.6);
+    obj->body.Centre.Resistance = Real(0.005);
+    obj->body.DefaultAngRes = Real(0.005);
+    obj->body.AngResistance = Real(0.005);
+    obj->body.AngResMod = Real(1.0);
+    obj->body.Centre.Grip = Real(0.005);
+    obj->body.Centre.StaticFriction = Real(1.0);
+    obj->body.Centre.KineticFriction = Real(0.5);
+    obj->body.Centre.Boost = ZERO;
+
+    SetBodySphere(&obj->body);
+    obj->body.CollSkin.Sphere = (SPHERE *)malloc(sizeof(SPHERE));
+    if (!obj->body.CollSkin.Sphere)
+        return FALSE;
+    SetVecZero(&obj->body.CollSkin.Sphere[0].Pos);
+    obj->body.CollSkin.Sphere[0].Radius = radius;
+    obj->body.CollSkin.NSpheres = 1;
+    CreateCopyCollSkin(&obj->body.CollSkin);
+    MakeTightLocalBBox(&obj->body.CollSkin);
+    BuildWorldSkin(&obj->body.CollSkin, &obj->body.Centre.Pos, &obj->body.Centre.WMatrix);
+
+    return TRUE;
+}
+
+static long InitStaticProp(OBJECT *obj, long model)
+{
+    obj->DefaultModel = LoadOneLevelModel(model, TRUE, obj->renderflag, 0);
+    if (obj->DefaultModel == -1)
+        return FALSE;
+
+    obj->renderflag.envmap = FALSE;
+    obj->CollType = COLL_TYPE_NONE;
+    obj->movehandler = NULL;
+    obj->collhandler = NULL;
+    return TRUE;
+}
+
+static long InitCone(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitHullProp(obj, LEVEL_MODEL_TRAFFICCONE, Real(1.6f), Real(2040));
+}
+
+static long InitBottle(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitHullProp(obj, LEVEL_MODEL_BOTTLE, Real(1.0f), Real(1500));
+}
+
+static long InitBucket(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitHullProp(obj, LEVEL_MODEL_BUCKET, Real(1.2f), Real(1800));
+}
+
+static long InitPacket(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitHullProp(obj, LEVEL_MODEL_PACKET, Real(0.8f), Real(1200));
+}
+
+static long InitAbcBlock(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitHullProp(obj, LEVEL_MODEL_ABCBLOCK, Real(1.0f), Real(1500));
+}
+
+static long InitBasketball(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitSphereProp(obj, LEVEL_MODEL_BASKETBALL, Real(0.6f), Real(50));
+}
+
+static long InitLantern(OBJECT *obj, long *flags)
+{
+    (void)flags;
+    return InitStaticProp(obj, LEVEL_MODEL_LANTERN);
+}
+
 #endif
