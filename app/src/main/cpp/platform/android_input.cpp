@@ -43,19 +43,37 @@ void AInput_TouchReset(void)
     memset(sTouchKeys, 0, sizeof(sTouchKeys));
 }
 
-// x, y normalized to [0,1] in landscape screen space
+// x, y normalized to [0,1] in landscape screen space.
+//
+// Zones:
+//   top-left      : FIRE the held pickup (sits over the HUD pickup box,
+//                   which panel.cpp draws at 4,56 size 64 in 640x480 space)
+//   bottom-left   : steer left / right
+//   bottom-right  : brake-reverse / accelerate
+//   anywhere else : right the car — recovers from a flip or a crash
+//                   (CTRL_RESET -> MOV_RightCar; edge-triggered, one per tap)
+//
+// Restart-at-start-line is deliberately NOT on touch any more (it used to sit
+// on the top-left zone and fired when reaching for the pickup); it remains on
+// gamepad Y.
 void AInput_TouchPoint(float x, float y)
 {
+    // fire: over the on-screen pickup box
+    if (y < 0.35f && x < 0.22f) {
+        sTouchKeys[DIK_LCONTROL] = 1;
+        return;
+    }
+
     if (y >= 0.50f) {
         // bottom band: driving controls
-        if (x < 0.18f)                    sTouchKeys[DIK_LEFT] = 1;
-        else if (x < 0.36f)               sTouchKeys[DIK_RIGHT] = 1;
-        else if (x >= 0.82f)              sTouchKeys[DIK_UP] = 1;      // accel
-        else if (x >= 0.64f)              sTouchKeys[DIK_DOWN] = 1;    // brake/rev
-    } else if (y < 0.30f) {
-        if (x >= 0.80f)                   sTouchKeys[DIK_LCONTROL] = 1; // fire
-        else if (x < 0.20f)               sTouchKeys[DIK_HOME] = 1;     // restart
+        if (x < 0.18f)  { sTouchKeys[DIK_LEFT] = 1;  return; }
+        if (x < 0.36f)  { sTouchKeys[DIK_RIGHT] = 1; return; }
+        if (x >= 0.82f) { sTouchKeys[DIK_UP] = 1;    return; }   // accel
+        if (x >= 0.64f) { sTouchKeys[DIK_DOWN] = 1;  return; }   // brake/rev
     }
+
+    // empty screen area: un-flip / un-crash the car
+    sTouchKeys[DIK_END] = 1;
 }
 
 // ---- gamepad / keyboard keys ----
