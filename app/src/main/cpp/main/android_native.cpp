@@ -36,6 +36,7 @@ extern "C" void AInput_TouchReset(void);
 extern "C" void AInput_TouchPoint(float x, float y);
 extern "C" void AInput_Key(int32_t keyCode, int down);
 extern "C" void AInput_Axes(float steerX, float gas, float brake);
+extern "C" void AInput_Tilt(float steer);
 extern "C" void GLDevice_InvalidateTextures(void);
 extern "C" void DbgPrintf(const char *fmt, ...);
 
@@ -360,6 +361,12 @@ JNIEXPORT void JNICALL
 Java_com_revolt_game_MainActivity_nativeAxes(JNIEnv *, jclass, jfloat sx, jfloat gas, jfloat brake)
 {
     AInput_Axes(sx, gas, brake);
+}
+
+JNIEXPORT void JNICALL
+Java_com_revolt_game_MainActivity_nativeTilt(JNIEnv *, jclass, jfloat steer)
+{
+    AInput_Tilt(steer);
 }
 
 }  // extern "C"

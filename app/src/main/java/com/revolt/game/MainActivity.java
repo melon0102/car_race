@@ -2,6 +2,10 @@ package com.revolt.game;
 
 import android.app.Activity;
 import android.graphics.PixelFormat;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.InputDevice;
@@ -35,10 +39,50 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private static native void nativeTouchPoint(float x, float y);
     private static native void nativeKey(int keyCode, int down);
     private static native void nativeAxes(float sx, float gas, float brake);
+    private static native void nativeTilt(float steer);
 
     private static final String TAG = "revolt-java";
 
     private SurfaceView surfaceView;
+
+    // ---- tilt steering: gravity along the screen's x axis -> [-1,1] ----
+    // Works alongside the touch buttons and gamepad; the native layer just
+    // merges it as one more steer source.
+
+    /** ±FULL_LOCK_G of gravity along screen-x = full steer (~24 degrees). */
+    private static final float TILT_FULL_LOCK_G = 4.0f;
+    private static final float TILT_FILTER = 0.25f;   // low-pass per sample
+
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
+    private boolean tiltEnabled;
+    private float tiltFiltered;
+
+    private final SensorEventListener tiltListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent ev) {
+            // gravity component along screen-right, per display rotation
+            // (sensorLandscape allows both landscape orientations, and on
+            // landscape-natural devices ROTATION_0/180 appear too)
+            float gRight;
+            switch (getWindowManager().getDefaultDisplay().getRotation()) {
+                case Surface.ROTATION_90:  gRight =  ev.values[1]; break;
+                case Surface.ROTATION_270: gRight = -ev.values[1]; break;
+                case Surface.ROTATION_180: gRight = -ev.values[0]; break;
+                default:                   gRight =  ev.values[0]; break;
+            }
+            // right edge dipped => screen-right points below the horizon =>
+            // its gravity reading goes negative => positive steer
+            float steer = -gRight / TILT_FULL_LOCK_G;
+            if (steer > 1f) steer = 1f;
+            if (steer < -1f) steer = -1f;
+            tiltFiltered += TILT_FILTER * (steer - tiltFiltered);
+            nativeTilt(tiltFiltered);
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) { }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,6 +139,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         setContentView(surfaceView);
         surfaceView.requestFocus();
         hideSystemBars();
+
+        tiltEnabled = getIntent().getBooleanExtra(LauncherActivity.EXTRA_TILT, true);
+        if (tiltEnabled) {
+            sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            if (accelerometer == null) tiltEnabled = false;   // no sensor: buttons only
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (tiltEnabled) {
+            sensorManager.registerListener(tiltListener, accelerometer,
+                    SensorManager.SENSOR_DELAY_GAME);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (tiltEnabled) {
+            sensorManager.unregisterListener(tiltListener);
+            tiltFiltered = 0f;
+            nativeTilt(0f);   // never leave a stale steer applied
+        }
     }
 
     @Override

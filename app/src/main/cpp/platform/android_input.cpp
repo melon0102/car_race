@@ -33,6 +33,7 @@ static char sPadKeys[256];      // from gamepad/keyboard events (edge driven)
 static float sAxisSteer = 0.0f; // left stick x
 static float sAxisGas = 0.0f;   // right trigger / gas
 static float sAxisBrake = 0.0f; // left trigger / brake
+static float sTiltSteer = 0.0f; // device tilt [-1,1], 0 when disabled
 
 extern "C" {
 
@@ -62,9 +63,12 @@ void AInput_TouchPoint(float x, float y)
     if (dik) sTouchKeys[dik] = 1;
 }
 
-// pressed-state feedback for the drawn buttons
+// pressed-state feedback for the drawn buttons (tilt lights the steer
+// arrows too, so tilting gives the same visual response as touching)
 int AInput_TouchHeld(int dik)
 {
+    if (dik == DIK_LEFT && sTiltSteer < -0.35f) return 1;
+    if (dik == DIK_RIGHT && sTiltSteer > 0.35f) return 1;
     return sTouchKeys[dik & 0xff];
 }
 
@@ -106,6 +110,13 @@ void AInput_Axes(float steerX, float gas, float brake)
     sAxisBrake = brake;
 }
 
+// ---- tilt steering (accelerometer, normalized/filtered on the Java side) ----
+
+void AInput_Tilt(float steer)
+{
+    sTiltSteer = steer;
+}
+
 }  // extern "C"
 
 // ---------------------------------------------------------------- game hooks
@@ -132,6 +143,8 @@ void ReadKeyboard(void)
     // analog stick/triggers as digital keys (deadzone 0.35)
     if (sAxisSteer < -0.35f) Keys[DIK_LEFT] = 1;
     if (sAxisSteer > 0.35f)  Keys[DIK_RIGHT] = 1;
+    if (sTiltSteer < -0.35f) Keys[DIK_LEFT] = 1;
+    if (sTiltSteer > 0.35f)  Keys[DIK_RIGHT] = 1;
     if (sAxisGas > 0.30f)    Keys[DIK_UP] = 1;
     if (sAxisBrake > 0.30f)  Keys[DIK_DOWN] = 1;
 }

@@ -34,6 +34,7 @@ public class LauncherActivity extends Activity {
     static final String EXTRA_REVERSED = "reversed";
     static final String EXTRA_MIRRORED = "mirrored";
     static final String EXTRA_NUM_CPUS = "numCpus";   // opponents in race mode (grid holds 12 cars)
+    static final String EXTRA_TILT = "tiltSteer";     // steer by tilting the device
 
     private static final String PREFS = "race_setup";
 
@@ -52,6 +53,7 @@ public class LauncherActivity extends Activity {
     private RadioButton modeTrial;
     private CheckBox reversedBox;
     private CheckBox mirroredBox;
+    private CheckBox tiltBox;
 
     private List<GameData.Track> tracks;
     private List<GameData.Car> cars;
@@ -172,8 +174,13 @@ public class LauncherActivity extends Activity {
         mirroredBox.setText("Mirrored");
         mirroredBox.setTextColor(TEXT);
         mirroredBox.setChecked(prefs.getBoolean(EXTRA_MIRRORED, false));
+        tiltBox = new CheckBox(this);
+        tiltBox.setText("Tilt steering");
+        tiltBox.setTextColor(TEXT);
+        tiltBox.setChecked(prefs.getBoolean(EXTRA_TILT, true));
         opts.addView(reversedBox);
         opts.addView(mirroredBox);
+        opts.addView(tiltBox);
         addPanel(opts);
 
         // start
@@ -191,9 +198,9 @@ public class LauncherActivity extends Activity {
         content.addView(start);
 
         TextView hint = new TextView(this);
-        hint.setText("Touch controls: left half of the screen steers, "
-                + "bottom-right accelerates, next to it brakes/reverses, "
-                + "top-right fires your pickup.");
+        hint.setText("Controls: steer with the bottom-left arrows or by tilting "
+                + "the device, accelerate/brake with the right-edge arrows, tap "
+                + "the car button to flip upright, tap the pickup box to fire.");
         hint.setTextColor(TEXT_DIM);
         hint.setPadding(0, dp(16), 0, 0);
         content.addView(hint);
@@ -214,6 +221,7 @@ public class LauncherActivity extends Activity {
                 .putBoolean(EXTRA_REVERSED, reversedBox.isChecked())
                 .putBoolean(EXTRA_MIRRORED, mirroredBox.isChecked())
                 .putInt(EXTRA_NUM_CPUS, numCpus)
+                .putBoolean(EXTRA_TILT, tiltBox.isChecked())
                 .apply();
 
         Intent intent = new Intent(this, MainActivity.class);
@@ -223,6 +231,7 @@ public class LauncherActivity extends Activity {
         intent.putExtra(EXTRA_REVERSED, reversedBox.isChecked());
         intent.putExtra(EXTRA_MIRRORED, mirroredBox.isChecked());
         intent.putExtra(EXTRA_NUM_CPUS, numCpus);
+        intent.putExtra(EXTRA_TILT, tiltBox.isChecked());
         startActivity(intent);
     }
 
