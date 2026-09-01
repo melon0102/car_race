@@ -102,6 +102,7 @@ add_library(revolt SHARED
     platform/android_input.cpp
     platform/cpu_driver.cpp
     platform/debug_overlay.cpp
+    platform/touch_overlay.cpp
     platform/net_stub.cpp
     ${GAME_SOURCES}
 )

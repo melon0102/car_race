@@ -2,8 +2,8 @@
 //
 // The game polls a DirectInput-style key array (Keys[256], DIK_* scancodes)
 // every frame via ReadKeyboard(). Here that array is fed from Android input:
-//   - touch zones (landscape): steer buttons bottom-left, accel/brake
-//     bottom-right, fire top-right, restart top-left
+//   - touch buttons (landscape): drawn + hit-tested by touch_overlay.cpp
+//     (steer bottom-left, accel/brake right edge, flip-recover, fire)
 //   - gamepads: dpad/left stick steer, A/gas accel, B/brake reverse, X fire
 //   - hardware keyboards: arrows etc. pass through directly
 //
@@ -45,35 +45,27 @@ void AInput_TouchReset(void)
 
 // x, y normalized to [0,1] in landscape screen space.
 //
-// Zones:
-//   top-left      : FIRE the held pickup (sits over the HUD pickup box,
-//                   which panel.cpp draws at 4,56 size 64 in 640x480 space)
-//   bottom-left   : steer left / right
-//   bottom-right  : brake-reverse / accelerate
-//   anywhere else : right the car — recovers from a flip or a crash
-//                   (CTRL_RESET -> MOV_RightCar; edge-triggered, one per tap)
+// The zone rectangles live in touch_overlay.cpp next to the button drawing,
+// so the visible controls and the hit areas are one definition:
+//   steer left/right arrows  bottom-left
+//   accel/brake arrows       right edge, stacked
+//   flip-recover car button  above them (DIK_END -> MOV_RightCar)
+//   fire                     over the HUD pickup box on the left
 //
-// Restart-at-start-line is deliberately NOT on touch any more (it used to sit
-// on the top-left zone and fired when reaching for the pickup); it remains on
-// gamepad Y.
+// Restart-at-start-line is deliberately NOT on touch (it used to fire when
+// reaching for the pickup); it remains on gamepad Y.
+extern int TouchOverlayHit(float x, float y);   // touch_overlay.cpp
+
 void AInput_TouchPoint(float x, float y)
 {
-    // fire: over the on-screen pickup box
-    if (y < 0.35f && x < 0.22f) {
-        sTouchKeys[DIK_LCONTROL] = 1;
-        return;
-    }
+    int dik = TouchOverlayHit(x, y);
+    if (dik) sTouchKeys[dik] = 1;
+}
 
-    if (y >= 0.50f) {
-        // bottom band: driving controls
-        if (x < 0.18f)  { sTouchKeys[DIK_LEFT] = 1;  return; }
-        if (x < 0.36f)  { sTouchKeys[DIK_RIGHT] = 1; return; }
-        if (x >= 0.82f) { sTouchKeys[DIK_UP] = 1;    return; }   // accel
-        if (x >= 0.64f) { sTouchKeys[DIK_DOWN] = 1;  return; }   // brake/rev
-    }
-
-    // empty screen area: un-flip / un-crash the car
-    sTouchKeys[DIK_END] = 1;
+// pressed-state feedback for the drawn buttons
+int AInput_TouchHeld(int dik)
+{
+    return sTouchKeys[dik & 0xff];
 }
 
 // ---- gamepad / keyboard keys ----

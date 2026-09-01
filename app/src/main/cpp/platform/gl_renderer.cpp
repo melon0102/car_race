@@ -14,6 +14,7 @@
 
 // on-screen debug overlay (platform/debug_overlay.cpp)
 extern "C" void DbgOverlayDraw(int width, int height);
+extern "C" void TouchOverlayDraw(int width, int height);
 extern "C" void DbgCountDraw(int vertexCount);
 extern "C" void DbgCountTexUpload(void);
 
@@ -358,7 +359,8 @@ void RendererSwap()
         // the overlay must leave gState exactly as found or those shadows lie
         // (symptom: first HUD batch each frame drew with a null texture)
         auto saved = gState;
-        DbgOverlayDraw(gWidth, gHeight);
+        TouchOverlayDraw(gWidth, gHeight);
+        DbgOverlayDraw(gWidth, gHeight);    // log stays on top of the buttons
         gState = saved;
         gState.dirty = true;
         inOverlay = false;
