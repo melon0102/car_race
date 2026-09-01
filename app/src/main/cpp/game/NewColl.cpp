@@ -905,11 +905,17 @@ NEWCOLLPOLY *LoadNewCollPolys(FILE *fp, short *nPolys)
 	// read the header
 	nRead = fread(&header, sizeof(NEWCOLLPOLYHDR), 1, fp);
 	if (nRead < 1) {
+		// ANDROID_PORT: retail fix (Xbox/Src/newcoll.cpp, "$PCBUG"): without
+		// this, an empty .ncp (tree1.ncp ships as 0 bytes) leaves the
+		// caller's count uninitialized — garbage NCollPolys made
+		// BuildInstanceCollPolys alloc-fail and crash, heap-layout dependent
+		*nPolys = 0;
 		return NULL;
 	}
 
 	// Allocate space for the polys
 	if ((polys = CreateCollPolys(header.NPolys)) == NULL) {
+		*nPolys = 0;	// ANDROID_PORT: same guard for the alloc-failure path
 		return NULL;
 	}
 
