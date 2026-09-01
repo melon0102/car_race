@@ -58,6 +58,7 @@ enum {
 	CAM_FREEDOM,
 	CAM_NEWFOLLOW,
 	CAM_EDIT,
+	CAM_SWEEP,		// ANDROID_PORT: retail start-grid sweep (Xbox/Src/camera.h)
 
 	CAM_NTYPES
 };
@@ -214,6 +215,7 @@ extern CAMNODE *FindNearestCameraPath(VEC *pos, long *nodeNum, long *linkNum);
 extern void UpdateCamera(CAMERA *camera);
 
 extern void SetCameraFollow(CAMERA *camera, OBJECT *object, long type);
+extern void SetCameraSweep(CAMERA *camera, OBJECT *object);	// ANDROID_PORT: retail start sweep
 extern void SetCameraAttached(CAMERA *camera, OBJECT *object, long type);
 extern void SetCameraFreedom(CAMERA *camera, OBJECT *object, long unUsed);
 extern void SetCameraRail(CAMERA *camera, OBJECT *object, long type);

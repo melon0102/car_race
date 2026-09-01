@@ -19,6 +19,10 @@
 extern void TriggerTrackDir(struct PlayerStruct *player, long flag, long n, VEC *vec);
 extern void TriggerSplit(struct PlayerStruct *player, long flag, long n, VEC *vec);
 extern void DrawControlPanel(void);
+// ANDROID_PORT: retail 3D countdown digits (models/go*.m)
+extern void LoadCountdownModels(void);
+extern void FreeCountdownModels(void);
+extern void DrawCountdown(void);
 extern void DrawPanelSprite(float x, float y, float width, float height, float tu, float tv, float twidth, float theight, long rgba);
 
 // globals

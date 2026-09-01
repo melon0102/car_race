@@ -29,8 +29,10 @@
  #define MS2TIME(_t)  	(_t)
 #endif
 
-//#define COUNTDOWN_START (1000 * 5)
-#define COUNTDOWN_START 1
+// ANDROID_PORT: the dev build had this stubbed to 1ms (instant start, no
+// 3-2-1); restored to the retail value (Xbox/Src/timing.h) — 5s total: the
+// grid sweep camera runs first, the big 3-2-1 digits draw once it's < 3000ms
+#define COUNTDOWN_START (1000 * 5)
 
 // prototypes
 

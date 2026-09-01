@@ -315,6 +315,10 @@ void GLP_GameLoop(void)
 		DrawAllCars();
 		Draw3dPolyList();
 
+// draw countdown (retail 3D digits — ANDROID_PORT)
+
+		DrawCountdown();
+
 // DRAW object at line-following camera pos
 		//long nodeNum, linkNum;
 		//FindNearestCameraPath(&PLR_LocalPlayer->car.Body->Centre.Pos, &nodeNum, &linkNum);

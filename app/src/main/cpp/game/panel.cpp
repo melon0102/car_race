@@ -10,6 +10,8 @@
 #include "text.h"
 #include "input.h"
 #include "camera.h"
+#include "model.h"
+#include "main.h"
 
 // globals
 
@@ -180,6 +182,89 @@ void TriggerTrackDir(PLAYER *player, long flag, long n, VEC *vec)
 // inc next track dir count
 
 	car->NextTrackDir++;
+}
+
+////////////////////////////////////////////////////////////////
+//
+// ANDROID_PORT: retail 3D countdown (rvsource/Xbox/Src/panel.cpp) — the
+// red/yellow "3, 2, 1, GO!" digit models (models/go*.m, untextured
+// env-shaded), drawn camera-relative with the retail spin flourish and
+// slide-in/out. Replaces the 1999 white DumpBigText digit. Adaptations:
+// no AllPlayersReady flag in this tree (countdown starting is enough),
+// and the models load per level like the other static models.
+//
+////////////////////////////////////////////////////////////////
+
+static MODEL CountdownModels[4];
+static VEC CountdownOffset = {0, -32.0f, 256.0f};
+
+void LoadCountdownModels(void)
+{
+	long i;
+
+	i  = LoadModel((char *)"models\\go3.m", &CountdownModels[0], -1, 1, LOADMODEL_FORCE_TPAGE, 100);
+	i += LoadModel((char *)"models\\go2.m", &CountdownModels[1], -1, 1, LOADMODEL_FORCE_TPAGE, 100);
+	i += LoadModel((char *)"models\\go1.m", &CountdownModels[2], -1, 1, LOADMODEL_FORCE_TPAGE, 100);
+	i += LoadModel((char *)"models\\gogo.m", &CountdownModels[3], -1, 1, LOADMODEL_FORCE_TPAGE, 100);
+
+	if (i < 4)
+	{
+		Box(NULL, (char *)"Can't load countdown models!", MB_OK);
+	}
+}
+
+void FreeCountdownModels(void)
+{
+	FreeModel(&CountdownModels[0], 1);
+	FreeModel(&CountdownModels[1], 1);
+	FreeModel(&CountdownModels[2], 1);
+	FreeModel(&CountdownModels[3], 1);
+}
+
+void DrawCountdown(void)
+{
+	long count, spin;
+	REAL f;
+	MAT wmat;
+	VEC wpos;
+
+// skip if not ready
+
+	if ((!CountdownTime && TotalRaceTime > 1000) || CountdownTime >= 3000)
+		return;
+
+// get counter
+
+	if (CountdownTime) count = CountdownTime + 1000;
+	else count = 1000 - TotalRaceTime;
+
+// set mat + pos
+
+	if (count > 3500 || count < 500) spin = 500;
+	else spin = count % 1000;
+
+	if (spin < 100) f = (float)(spin - 100) / 400.0f;
+	else if (spin > 900) f = (float)(spin - 900) / 400.0f;
+	else f = 0.0f;
+
+	RotMatrixY(&wmat, f);
+
+	CopyVec(&CountdownOffset, &wpos);
+	if (count > 3800) wpos.v[Z] += (3800 - count);
+	else if (count < 200) wpos.v[Z] -= (200 - count);
+
+// draw camera-relative: identity view, fixed 640 perspective
+
+	SetViewport(Camera[CameraCount].X, Camera[CameraCount].Y, Camera[CameraCount].Xsize, Camera[CameraCount].Ysize, 640.0f);
+	SetCameraView(&Identity, &ZeroVector, 0.0f);
+
+	SetEnvStatic(&wpos, &wmat, 0x404040, 0.0f, 0.0f, 1.0f);
+	DrawModel(&CountdownModels[3 - (count / 1000)], &wmat, &wpos, MODEL_ENV);
+
+// restore the game camera's viewport + view
+
+	SetViewport(Camera[CameraCount].X, Camera[CameraCount].Y, Camera[CameraCount].Xsize, Camera[CameraCount].Ysize, BaseGeomPers + Camera[CameraCount].Lens);
+	SetCameraView(&Camera[CameraCount].WMatrix, &Camera[CameraCount].WPos, Camera[CameraCount].Shake);
 }
 
 /////////////////////
@@ -395,17 +480,8 @@ void DrawControlPanel(void)
 		ALPHA_DEST(D3DBLEND_INVSRCALPHA);
 	}
 
-// big font
-
-	SET_TPAGE(TPAGE_BIGFONT);
-
-// countdown?
-
-	if (CountdownTime && CountdownTime < (1000 * 3))
-	{
-		wsprintf(buf, "%d", (CountdownTime / 1000 + 1));
-		DumpBigText(224, 0, 192, 256, 0xc0ffffff, buf);
-	}
+// countdown: drawn as the retail 3D digit models by DrawCountdown()
+// (gameloop) — the 1999 white DumpBigText digit is gone (ANDROID_PORT)
 
 // normal font
 

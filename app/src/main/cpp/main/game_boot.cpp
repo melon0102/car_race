@@ -265,8 +265,9 @@ void SetupGame(void)
         InitPlayersNetwork();
     }
 
-    // set camera to follow car
-    SetCameraFollow(CAM_MainCamera, PLR_LocalPlayer->ownobj, CAM_FOLLOW_BEHIND);
+    // start-grid sweep camera: shows the grid from the front through the
+    // countdown, then hands over to the follow cam (retail main.cpp behavior)
+    SetCameraSweep(CAM_MainCamera, PLR_LocalPlayer->ownobj);
 
     // go game loop
     TotalRaceTime = 0;

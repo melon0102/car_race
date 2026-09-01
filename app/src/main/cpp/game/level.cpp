@@ -23,6 +23,7 @@ extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT
 #include "geom.h"
 #include "particle.h"
 #include "texture.h"
+#include "panel.h"	// ANDROID_PORT: LoadCountdownModels / FreeCountdownModels
 #include "model.h"
 #include "aerial.h"
 #include "NewColl.h"
@@ -128,6 +129,7 @@ void LEV_InitLevel(void)
 	// init level model system
 	InitLevelModels();
 	LoadStaticLevelModels();
+	LoadCountdownModels();	// ANDROID_PORT: retail 3D countdown digits (LevelLoad.cpp did this)
 
 	// Set near / far + fog
 	SetNearFar(48.0f, LevelInf[GameSettings.Level].FarClip);
@@ -272,6 +274,7 @@ void LEV_EndLevel(void)
 
 	// free level models
 	FreeLevelModels();
+	FreeCountdownModels();	// ANDROID_PORT
 
 	// Kill player system
 	PLR_KillAllPlayers();

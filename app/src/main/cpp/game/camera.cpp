@@ -366,6 +366,85 @@ void SetCameraNewFollow(CAMERA *camera, OBJECT *object, long followType)
 	InitCamPos(camera);
 }
 
+////////////////////////////////////////////////////////////////
+//
+// ANDROID_PORT: retail start-grid sweep camera, ported from
+// rvsource/Xbox/Src/camera.cpp (SetCameraSweep / CameraSweepPos).
+// During the race countdown the camera starts 3000 units in FRONT of the
+// start grid looking back at the cars, sweeps to just behind the line over
+// ~3 in-game seconds, then hands itself over to the normal follow camera.
+// Adaptations: GetCarGrid instead of GetCarStartGrid, plain lerp instead of
+// InterpVec, and the handover just calls SetCameraFollow (the residual snap
+// is a few hundred units at most, retail had the same).
+//
+////////////////////////////////////////////////////////////////
+
+#define CAMERA_SWEEP_TIME Real(3)
+
+static void CameraSweepPos(CAMERA *camera)
+{
+	long i;
+	REAL t = camera->Timer / CAMERA_SWEEP_TIME;
+
+	if (t > ONE) t = ONE;
+
+	CopyVec(&camera->WPos, &camera->OldWPos);
+	for (i = 0 ; i < 3 ; i++)
+		camera->WPos.v[i] = camera->PosOffset.v[i] + (camera->DestOffset.v[i] - camera->PosOffset.v[i]) * t;
+
+	if (TimeStep > Real(0.0001))
+	{
+		VecMinusVec(&camera->WPos, &camera->OldWPos, &camera->Vel);
+		VecDivScalar(&camera->Vel, TimeStep);
+	}
+	else
+	{
+		SetVecZero(&camera->Vel);
+	}
+
+	if (t == ONE)
+	{
+		SetCameraFollow(camera, camera->Object, CAM_FOLLOW_BEHIND);
+	}
+}
+
+void SetCameraSweep(CAMERA *camera, OBJECT *object)
+{
+	VEC pos0, pos1;
+	MAT mat;
+
+	camera->Type = CAM_SWEEP;
+	camera->SubType = 0;
+	camera->Object = object;
+
+	camera->CalcCamPos = CameraSweepPos;
+	camera->CalcCamLook = CameraAwayLook;
+	camera->Lens = ZERO;
+	camera->Collide = FALSE;
+	camera->Timer = ZERO;
+	camera->Zoom = FALSE;
+	camera->ZoomMod = LENS_DIST_MOD;
+
+// sweep start / end: from far in front of the grid to just behind the line
+
+	GetCarGrid(0, &pos0, &mat);
+	GetCarGrid(1, &pos1, &mat);
+
+	VecPlusEqVec(&pos0, &pos1);
+	VecMulScalar(&pos0, HALF);
+	pos0.v[Y] -= Real(150);
+
+	VecPlusScalarVec(&pos0, Real(3000), &mat.mv[L], &camera->PosOffset);
+	VecPlusScalarVec(&pos0, Real(-300), &mat.mv[L], &camera->DestOffset);
+
+	CopyVec(&CamFollowData[CAM_FOLLOW_BEHIND].LookOffset, &camera->LookOffset);
+	CopyVec(&CamFollowData[CAM_FOLLOW_BEHIND].LookOffset, &camera->OldLookOffset);
+
+	CopyVec(&camera->PosOffset, &camera->WPos);
+	CopyVec(&camera->WPos, &camera->OldWPos);
+	SetVecZero(&camera->Vel);
+}
+
 void SetCameraFollow(CAMERA *camera, OBJECT *object, long followType)
 {
 	Assert(followType < CAM_FOLLOW_NTYPES);
