@@ -5,7 +5,7 @@ plugins {
 android {
     namespace = "com.revolt.game"
     compileSdk = 34
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "25.2.9519653"
 
     defaultConfig {
         applicationId = "com.revolt.game"
