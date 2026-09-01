@@ -107,6 +107,16 @@ void CON_DoPlayerControl(void)
 			player->controls.dy = 0;
 		}
 
+// finished the race? coast to a stop under the rotate cam (retail
+// control.cpp strips throttle for finished cars — ANDROID_PORT)
+
+		if (player->RaceFinishTime)
+		{
+			player->controls.dy = 0;
+			player->controls.digital = 0;
+			player->controls.idigital = 0;
+		}
+
 // act on inputs
 
 		if (player->conhandler)

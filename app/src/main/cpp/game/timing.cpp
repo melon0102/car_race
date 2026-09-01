@@ -232,15 +232,29 @@ void UpdateRaceTimers(void)
 
 				if (car->Laps == GameSettings.NumberOfLaps)	// ANDROID_PORT: was hardcoded 5
 				{
-					car->LastRaceTime = TotalRaceTime;
-					TotalRaceTime = 0;
-					TotalRaceStartTime = time;
+					// ANDROID_PORT: race mode finishes like retail — record the
+					// placing, keep the race clock running for cars still out
+					// there, and swing to the rotate cam (SetPlayerFinished)
+					if (GameSettings.GameType != GAMETYPE_TRIAL && !player->RaceFinishTime)
+					{
+						SetPlayerFinished(player, TotalRaceTime);
 
-					if (car->LastRaceTime < car->BestRaceTime)
-						car->BestRaceTime = car->LastRaceTime;
+						car->LastRaceTime = TotalRaceTime;
+						if (car->LastRaceTime < car->BestRaceTime)
+							car->BestRaceTime = car->LastRaceTime;
+					}
+					else if (GameSettings.GameType == GAMETYPE_TRIAL)
+					{
+						car->LastRaceTime = TotalRaceTime;
+						TotalRaceTime = 0;
+						TotalRaceStartTime = time;
 
-					if (car->AllowedBestTime) {
-						CheckForBestRace(car);
+						if (car->LastRaceTime < car->BestRaceTime)
+							car->BestRaceTime = car->LastRaceTime;
+
+						if (car->AllowedBestTime) {
+							CheckForBestRace(car);
+						}
 					}
 				}
 
@@ -277,6 +291,21 @@ void UpdateRaceTimers(void)
 // CPU PLAYER
 
 		case PLAYER_CPU:
+
+// ANDROID_PORT: the 1999 build never counted CPU laps, so opponents could
+// never finish. Count them the same way (start-line crossing via the AI
+// zone wrap) and feed the retail finish table when they complete the race.
+
+			if (UpdateCarAiZone(player))
+			{
+				car->Laps++;
+
+				if (GameSettings.GameType != GAMETYPE_TRIAL && !player->RaceFinishTime &&
+				    car->Laps == GameSettings.NumberOfLaps)
+				{
+					SetPlayerFinished(player, TotalRaceTime);
+				}
+			}
 			break;
 
 // DEFAULT PLAYER

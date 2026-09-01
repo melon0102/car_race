@@ -68,6 +68,10 @@ typedef struct PlayerStruct
 	long					PickupNum;			// current pickup num;
 	OBJECT					*PickupTarget;		// target object for missiles etc
 
+	// ANDROID_PORT: retail race-finish state (Xbox/Src/player.h)
+	unsigned long			RaceFinishTime;		// race finish time or 0
+	long					RaceFinishPos;		// final position (0 = winner)
+
 #ifdef _PC
 	long			Ready;						// network game 'ready' flag
 	char			PlayerName[MAX_PLAYER_NAME];
@@ -89,6 +93,16 @@ extern PLAYER	*PLR_PlayerHead, *PLR_PlayerTail;
 extern long		NumPlayers;
 extern PLAYER *PLR_LocalPlayer;
 extern CTRL_TYPE PLR_LocalCtrlType;
+
+// ANDROID_PORT: retail finish table (Xbox/Src/player.h)
+typedef struct {
+	unsigned long Time;
+	PLAYER *Player;
+} FINISH_ENTRY;
+
+extern FINISH_ENTRY FinishTable[MAX_NUM_PLAYERS];
+extern long AllPlayersFinished;
+extern void SetPlayerFinished(PLAYER *player, unsigned long time);
 
 //
 // External function prototypes

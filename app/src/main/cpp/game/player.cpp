@@ -38,6 +38,7 @@
 #include "sfx.h"
 #endif
 #include "field.h"
+#include "camera.h"	// ANDROID_PORT: SetPlayerFinished rotate cam
 
 //
 // Static variables
@@ -70,6 +71,12 @@ void CreatePlayerForceField(PLAYER *player);
 
 //--------------------------------------------------------------------------------------------------------------------------
 
+// ANDROID_PORT: retail finish table (Xbox/Src/player.cpp)
+FINISH_ENTRY FinishTable[MAX_NUM_PLAYERS];
+long AllPlayersFinished;
+
+extern "C" void DbgPrintf(const char *fmt, ...);   // debug ticker (platform)
+
 void PLR_InitPlayers(void)
 {
 	long	ii;
@@ -83,7 +90,12 @@ void PLR_InitPlayers(void)
 		Players[ii].ctrlhandler = NULL;
 		Players[ii].conhandler = NULL;
 		Players[ii].Slot = ii;
+		Players[ii].RaceFinishTime = 0;
+		Players[ii].RaceFinishPos = 0;
+		FinishTable[ii].Time = 0;
+		FinishTable[ii].Player = NULL;
 	}
+	AllPlayersFinished = FALSE;
 
 	NumPlayers = 0;
 	s_NextFreePlayer = Players;
@@ -345,3 +357,53 @@ void CreatePlayerForceField(PLAYER *player)
 		ZERO);
 }
 
+
+/////////////////////////
+// set player finished //
+/////////////////////////
+// ANDROID_PORT: ported from the retail tree (Xbox/Src/player.cpp): record
+// the finish time, insert into the sorted finish table, remember the final
+// position, and swing the local player's camera into the trophy-spin rotate
+// cam. Retail's console message / online stats are omitted — the panel draws
+// the finish overlay instead.
+
+void SetPlayerFinished(PLAYER *player, unsigned long time)
+{
+	long i, j;
+
+// set players finish time
+
+	player->RaceFinishTime = time;
+
+// add to finish table
+
+	for (i = 0 ; i < MAX_NUM_PLAYERS ; i++)
+	{
+		if (!FinishTable[i].Time || time < FinishTable[i].Time)
+		{
+			for (j = MAX_NUM_PLAYERS - 1 ; j > i ; j--)
+			{
+				FinishTable[j] = FinishTable[j - 1];
+				if (FinishTable[j].Time)
+					FinishTable[j].Player->RaceFinishPos = j;
+			}
+
+			FinishTable[i].Player = player;
+			FinishTable[i].Time = time;
+			player->RaceFinishPos = i;
+
+			break;
+		}
+	}
+
+// set camera to rotate mode
+
+	if (player->type == PLAYER_LOCAL)
+	{
+		SetCameraFollow(CAM_MainCamera, player->ownobj, CAM_FOLLOW_ROTATE);
+	}
+
+	DbgPrintf("FINISH POS %d SLOT %d TIME %02d:%02d:%03d",
+	          (int)player->RaceFinishPos + 1, (int)player->Slot,
+	          MINUTES(time), SECONDS(time), THOUSANDTHS(time));
+}

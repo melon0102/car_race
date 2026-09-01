@@ -516,17 +516,19 @@ void DrawControlPanel(void)
 		DumpText(260, 144, 12, 16, 0xc0ffffff, buf);
 	}
 
-// lap time
+// lap time + race time (time-trial layout only — the race HUD matches
+// retail: lap counter + best lap on the right, position on the left)
 
-	DumpText(588, 96, 12, 16, 0xc000ffff, "lap");
-	wsprintf(buf, "%02d:%02d:%03d", MINUTES(PLR_LocalPlayer->car.CurrentLapTime), SECONDS(PLR_LocalPlayer->car.CurrentLapTime), THOUSANDTHS(PLR_LocalPlayer->car.CurrentLapTime));
-	DumpText(516, 112, 12, 16, 0xc0ffffff, buf);
+	if (GameSettings.GameType == GAMETYPE_TRIAL)
+	{
+		DumpText(588, 96, 12, 16, 0xc000ffff, "lap");
+		wsprintf(buf, "%02d:%02d:%03d", MINUTES(PLR_LocalPlayer->car.CurrentLapTime), SECONDS(PLR_LocalPlayer->car.CurrentLapTime), THOUSANDTHS(PLR_LocalPlayer->car.CurrentLapTime));
+		DumpText(516, 112, 12, 16, 0xc0ffffff, buf);
 
-// race time
-
-	DumpText(576, 136, 12, 16, 0xc000ffff, "race");
-	wsprintf(buf, "%02d:%02d:%03d", MINUTES(TotalRaceTime), SECONDS(TotalRaceTime), THOUSANDTHS(TotalRaceTime));
-	DumpText(516, 152, 12, 16, 0xc0ffffff, buf);
+		DumpText(576, 136, 12, 16, 0xc000ffff, "race");
+		wsprintf(buf, "%02d:%02d:%03d", MINUTES(TotalRaceTime), SECONDS(TotalRaceTime), THOUSANDTHS(TotalRaceTime));
+		DumpText(516, 152, 12, 16, 0xc0ffffff, buf);
+	}
 
 // speed
 
@@ -548,16 +550,91 @@ void DrawControlPanel(void)
 //	DumpText(100, 50, 8, 12, 0xffff0000, buf);
 
 // laps
+// ANDROID_PORT: retail behavior — "N/M" while racing, "finished" after the
+// last lap (the 1999 code kept counting: "4/3"). Race mode puts the counter
+// top-right like the reference layout (position owns the top-left); time
+// trial keeps it top-left and shows just the running lap number
 
-	DumpText(16, 16, 12, 16, 0xc000ffff, "lap");
-	wsprintf(buf, "%d/%d", PLR_LocalPlayer->car.Laps + 1, GameSettings.NumberOfLaps);	// ANDROID_PORT: was hardcoded 5
-	DumpText(16, 32, 12, 16, 0xc0ffffff, buf);
+	if (GameSettings.GameType == GAMETYPE_TRIAL)
+	{
+		DumpText(16, 16, 12, 16, 0xc000ffff, "lap");
+		wsprintf(buf, "%d", PLR_LocalPlayer->car.Laps + 1);
+		DumpText(16, 32, 12, 16, 0xc0ffffff, buf);
+	}
+	else
+	{
+		DumpText(588, 16, 12, 16, 0xc000ffff, "lap");
+		if (PLR_LocalPlayer->car.Laps < GameSettings.NumberOfLaps)
+			wsprintf(buf, "%d/%d", PLR_LocalPlayer->car.Laps + 1, GameSettings.NumberOfLaps);
+		else
+			wsprintf(buf, "finished");
+		DumpText(624 - 12 * (long)strlen(buf), 32, 12, 16, 0xc0ffffff, buf);
+	}
 
 // position
 
 	if (GameSettings.GameType != GAMETYPE_TRIAL)
 	{
-		DumpText(58, 416, 12, 16, 0xc0ffffff, "1");
+		// ANDROID_PORT: live race position (retail panel.cpp) — the 1999
+		// build drew a hardcoded "1". While racing, rank by race distance
+		// (laps done minus normalized distance to the line); once finished,
+		// the finish-table placing is final.
+		static const char *sOrdinal[] = {"st", "nd", "rd", "th"};
+		long pos;
+
+		if (PLR_LocalPlayer->RaceFinishTime)
+		{
+			pos = PLR_LocalPlayer->RaceFinishPos + 1;
+		}
+		else
+		{
+			float localdist = (float)PLR_LocalPlayer->car.Laps - PLR_LocalPlayer->CarAI.FinishDistPanel;
+
+			pos = 1;
+			for (player = PLR_PlayerHead ; player ; player = player->next)
+			{
+				if (player == PLR_LocalPlayer || player->type == PLAYER_GHOST || player->type == PLAYER_NONE)
+					continue;
+				if ((float)player->car.Laps - player->CarAI.FinishDistPanel > localdist)
+					pos++;
+			}
+		}
+
+		wsprintf(buf, "%d", pos);
+		DumpText(16, 48, 24, 32, 0xc000ffff, buf);
+		DumpText(16 + 26 * (pos > 9 ? 2 : 1), 48, 12, 16, 0xc0ff4040,
+		         (char *)sOrdinal[(pos >= 1 && pos <= 3) ? pos - 1 : 3]);
+
+// finished: winner + results table over the rotate cam
+
+		if (PLR_LocalPlayer->RaceFinishTime)
+		{
+			long n, row = 0;
+
+			DumpText(232, 120, 12, 16, 0xc0ffff00, PLR_LocalPlayer->RaceFinishPos == 0 ?
+			         (char *)"you win!" : (char *)"race finished");
+
+			AllPlayersFinished = TRUE;
+			for (n = 0 ; n < MAX_NUM_PLAYERS ; n++)
+			{
+				if (!FinishTable[n].Time)
+					break;
+				player = FinishTable[n].Player;
+
+				wsprintf(buf, "%d%s %s %02d:%02d:%03d", n + 1,
+				         sOrdinal[(n < 3) ? n : 3],
+				         (player == PLR_LocalPlayer) ? "player" : CarInfo[player->cartype].Name,
+				         MINUTES(FinishTable[n].Time), SECONDS(FinishTable[n].Time), THOUSANDTHS(FinishTable[n].Time));
+				DumpText(180, 152 + row * 20, 8, 12,
+				         (player == PLR_LocalPlayer) ? 0xc0ffff00 : 0xc0ffffff, buf);
+				row++;
+			}
+
+			for (player = PLR_PlayerHead ; player ; player = player->next)
+				if (player->type == PLAYER_LOCAL || player->type == PLAYER_CPU)
+					if (!player->RaceFinishTime)
+						AllPlayersFinished = FALSE;
+		}
 	}
 
 // last lap
