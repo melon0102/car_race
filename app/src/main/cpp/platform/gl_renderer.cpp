@@ -78,7 +78,10 @@ void main() {
 )";
 
 const char *kFragSrc3 =
+    // precision must precede the out declaration — lenient drivers accept it
+    // after, SwiftShader (emulator) refuses ("No precision specified")
     "#version 300 es\n#define VARY in\n#define TEX2D texture\n"
+    "precision mediump float;\n"
     "out vec4 rvFragColor;\n#define OUT_COLOR rvFragColor\n";
 const char *kFragSrc2 =
     "#define VARY varying\n#define TEX2D texture2D\n"
