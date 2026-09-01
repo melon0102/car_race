@@ -44,6 +44,7 @@ typedef struct {
 	long GameType, Level, LevelNum;
 	unsigned long Reversed, Mirrored;
 	unsigned long AutoBrake, CarID, Paws;
+	long NumberOfLaps;		// ANDROID_PORT: retail field (Xbox/Src/main.h) — the 1999 build hardcoded 5
 } GAME_SETTINGS;
 
 typedef struct {

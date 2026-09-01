@@ -177,6 +177,7 @@ void InitCar(CAR *car)
 // init lap stuff
 
 	car->NextSplit = 0;
+	car->NextTrackDir = 0;
 	car->Laps = 0;
 	car->CurrentLapTime = 0;
 	car->LastLapTime = 0;

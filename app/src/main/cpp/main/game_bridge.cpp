@@ -27,7 +27,7 @@
 // ---------------------------------------------------------------------------
 static_assert(sizeof(long) == 4, "long must be 32-bit in game code (RV long=int contract)");
 static_assert(sizeof(VISIMASK) == 8, "VISIMASK must stay 64-bit");
-static_assert(sizeof(GAME_SETTINGS) == 32, "GAME_SETTINGS layout drifted");   // 8 x 32-bit fields
+static_assert(sizeof(GAME_SETTINGS) == 36, "GAME_SETTINGS layout drifted");   // 9 x 32-bit fields (NumberOfLaps added)
 
 // ---------------------------------------------------------------------------
 // Globals normally defined in main.cpp (not compiled — replaced by

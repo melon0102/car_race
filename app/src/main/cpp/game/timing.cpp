@@ -202,6 +202,7 @@ void UpdateRaceTimers(void)
 
 				car->Laps++;
 				car->NextSplit = 0;
+				car->NextTrackDir = 0;	// ANDROID_PORT: re-arm the corner arrows each lap (retail timing.cpp)
 
 				car->LastLapTime = car->CurrentLapTime;
 				car->CurrentLapTime = 0;
@@ -229,7 +230,7 @@ void UpdateRaceTimers(void)
 #endif
 // best race?
 
-				if (car->Laps == 5)
+				if (car->Laps == GameSettings.NumberOfLaps)	// ANDROID_PORT: was hardcoded 5
 				{
 					car->LastRaceTime = TotalRaceTime;
 					TotalRaceTime = 0;

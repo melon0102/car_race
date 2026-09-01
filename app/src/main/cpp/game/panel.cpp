@@ -148,23 +148,38 @@ void TriggerSplit(PLAYER *player, long flag, long n, VEC *vec)
 // trigger track dir //
 ///////////////////////
 
+// ANDROID_PORT: rewritten to the retail logic (Xbox/Src/panel.cpp). The level
+// data packs each trigger's Flag as (sequence << 16 | arrow type); the 1999
+// code used the whole packed value as the UV table index, so with retail .tri
+// files the lookup landed way out of bounds and no arrow ever appeared. The
+// sequence gate (car->NextTrackDir, reset per lap in timing.cpp) makes the
+// arrows fire in track order every lap; type 11 means "advance, no arrow".
+
 void TriggerTrackDir(PLAYER *player, long flag, long n, VEC *vec)
 {
+	CAR *car = &player->car;
 
 // fuck off everyone else
 
 	if (player != PLR_LocalPlayer)
 		return;
 
-// ignore if not first trigger
+// ignore if wrong track dir
 
-	if (!(flag & TRIGGER_GLOBAL_FIRST))
+	if ((n >> 16) != car->NextTrackDir)
 		return;
 
 // set track dir flags
 
-	TrackDirType = n;
-	TrackDirCount = TRACK_DIR_COUNT;
+	if ((n & 0xffff) < 11)
+	{
+		TrackDirType = (n & 0xffff);
+		TrackDirCount = TRACK_DIR_COUNT;
+	}
+
+// inc next track dir count
+
+	car->NextTrackDir++;
 }
 
 /////////////////////
@@ -459,7 +474,7 @@ void DrawControlPanel(void)
 // laps
 
 	DumpText(16, 16, 12, 16, 0xc000ffff, "lap");
-	wsprintf(buf, "%d/%d", PLR_LocalPlayer->car.Laps + 1, 5);
+	wsprintf(buf, "%d/%d", PLR_LocalPlayer->car.Laps + 1, GameSettings.NumberOfLaps);	// ANDROID_PORT: was hardcoded 5
 	DumpText(16, 32, 12, 16, 0xc0ffffff, buf);
 
 // position

@@ -338,6 +338,7 @@ typedef struct CarStruct {
 	long			Rendered;					// car was rendered this frame
 
 	long			NextSplit;					// next split ID
+	long			NextTrackDir;				// next track dir sequence number (ANDROID_PORT: retail field, Xbox/Src/car.h)
 	long			Laps;						// laps completed
 	long			CurrentLapTime;				// current lap time
 	long			LastLapTime;				// last lap time

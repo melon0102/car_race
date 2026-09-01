@@ -71,13 +71,18 @@ static int  gCfgGameType = GAMETYPE_TRIAL;
 static int  gCfgReversed = FALSE;
 static int  gCfgMirrored = FALSE;
 static int  gCfgNumCPUs = 7;   // opponents in GAMETYPE_SINGLE — retail-style 8-car grid (grid holds 12)
+static int  gCfgNumLaps = 3;   // race length; the 1999 build hardcoded 5
 
 extern "C" void Revolt_Configure(const char *levelDir, int carId, int gameType,
-                                 int reversed, int mirrored, int numCpuCars)
+                                 int reversed, int mirrored, int numCpuCars,
+                                 int numLaps)
 {
     gCfgNumCPUs = numCpuCars;
     if (gCfgNumCPUs < 1) gCfgNumCPUs = 1;
     if (gCfgNumCPUs > MAX_NUM_PLAYERS - 1) gCfgNumCPUs = MAX_NUM_PLAYERS - 1;
+    gCfgNumLaps = numLaps;
+    if (gCfgNumLaps < 1) gCfgNumLaps = 1;
+    if (gCfgNumLaps > 20) gCfgNumLaps = 20;
     if (levelDir && levelDir[0]) {
         strncpy(gCfgLevelDir, levelDir, sizeof(gCfgLevelDir) - 1);
         gCfgLevelDir[sizeof(gCfgLevelDir) - 1] = '\0';
@@ -89,8 +94,8 @@ extern "C" void Revolt_Configure(const char *levelDir, int carId, int gameType,
     gCfgGameType = (gameType == GAMETYPE_SINGLE) ? GAMETYPE_SINGLE : GAMETYPE_TRIAL;
     gCfgReversed = reversed ? TRUE : FALSE;
     gCfgMirrored = mirrored ? TRUE : FALSE;
-    ALOGI("configure: level '%s' car %d type %d rev %d mir %d cpus %d",
-          gCfgLevelDir, carId, gCfgGameType, gCfgReversed, gCfgMirrored, gCfgNumCPUs);
+    ALOGI("configure: level '%s' car %d type %d rev %d mir %d cpus %d laps %d",
+          gCfgLevelDir, carId, gCfgGameType, gCfgReversed, gCfgMirrored, gCfgNumCPUs, gCfgNumLaps);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +162,7 @@ extern "C" int Revolt_Boot(const char *dataDir)
     GameSettings.Reversed = gCfgReversed;
     GameSettings.AutoBrake = RegistrySettings.AutoBrake;
     GameSettings.Paws = FALSE;
+    GameSettings.NumberOfLaps = gCfgNumLaps;
 
     Event = SetupGame;
 

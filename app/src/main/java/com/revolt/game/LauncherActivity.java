@@ -35,6 +35,7 @@ public class LauncherActivity extends Activity {
     static final String EXTRA_MIRRORED = "mirrored";
     static final String EXTRA_NUM_CPUS = "numCpus";   // opponents in race mode (grid holds 12 cars)
     static final String EXTRA_TILT = "tiltSteer";     // steer by tilting the device
+    static final String EXTRA_NUM_LAPS = "numLaps";   // race length (default 3; the 1999 build hardcoded 5)
 
     private static final String PREFS = "race_setup";
 
@@ -50,6 +51,7 @@ public class LauncherActivity extends Activity {
     private Spinner trackSpinner;
     private Spinner carSpinner;
     private Spinner cpuSpinner;
+    private Spinner lapsSpinner;
     private RadioButton modeTrial;
     private CheckBox reversedBox;
     private CheckBox mirroredBox;
@@ -162,6 +164,20 @@ public class LauncherActivity extends Activity {
         }
         addPanel(cpuSpinner);
 
+        // laps
+        addLabel("LAPS");
+        lapsSpinner = new Spinner(this);
+        Integer[] lapCounts = {1, 2, 3, 4, 5, 6, 8, 10};
+        ArrayAdapter<Integer> lapsAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, lapCounts);
+        lapsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        lapsSpinner.setAdapter(lapsAdapter);
+        int savedLaps = prefs.getInt(EXTRA_NUM_LAPS, 3);
+        for (int i = 0; i < lapCounts.length; i++) {
+            if (lapCounts[i] == savedLaps) { lapsSpinner.setSelection(i); break; }
+        }
+        addPanel(lapsSpinner);
+
         // options
         addLabel("OPTIONS");
         LinearLayout opts = new LinearLayout(this);
@@ -213,6 +229,8 @@ public class LauncherActivity extends Activity {
         int gameType = modeTrial.isChecked() ? 0 : 1;
         Integer cpus = (Integer) cpuSpinner.getSelectedItem();
         int numCpus = (cpus != null) ? cpus : 7;
+        Integer laps = (Integer) lapsSpinner.getSelectedItem();
+        int numLaps = (laps != null) ? laps : 3;
 
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString(EXTRA_LEVEL_DIR, track.dir)
@@ -221,6 +239,7 @@ public class LauncherActivity extends Activity {
                 .putBoolean(EXTRA_REVERSED, reversedBox.isChecked())
                 .putBoolean(EXTRA_MIRRORED, mirroredBox.isChecked())
                 .putInt(EXTRA_NUM_CPUS, numCpus)
+                .putInt(EXTRA_NUM_LAPS, numLaps)
                 .putBoolean(EXTRA_TILT, tiltBox.isChecked())
                 .apply();
 
@@ -231,6 +250,7 @@ public class LauncherActivity extends Activity {
         intent.putExtra(EXTRA_REVERSED, reversedBox.isChecked());
         intent.putExtra(EXTRA_MIRRORED, mirroredBox.isChecked());
         intent.putExtra(EXTRA_NUM_CPUS, numCpus);
+        intent.putExtra(EXTRA_NUM_LAPS, numLaps);
         intent.putExtra(EXTRA_TILT, tiltBox.isChecked());
         startActivity(intent);
     }

@@ -29,7 +29,8 @@ extern "C" int Revolt_SelfTest(void);
 extern "C" int Revolt_Boot(const char *dataDir);
 extern "C" int Revolt_Frame(void);
 extern "C" void Revolt_Configure(const char *levelDir, int carId, int gameType,
-                                 int reversed, int mirrored, int numCpuCars);
+                                 int reversed, int mirrored, int numCpuCars,
+                                 int numLaps);
 
 // input layer (platform/android_input.cpp)
 extern "C" void AInput_TouchReset(void);
@@ -302,11 +303,12 @@ JNIEXPORT void JNICALL
 Java_com_revolt_game_MainActivity_nativeConfigure(JNIEnv *env, jclass,
                                                   jstring levelDir, jint carId,
                                                   jint gameType, jboolean reversed,
-                                                  jboolean mirrored, jint numCpuCars)
+                                                  jboolean mirrored, jint numCpuCars,
+                                                  jint numLaps)
 {
     const char *s = levelDir ? env->GetStringUTFChars(levelDir, nullptr) : nullptr;
     Revolt_Configure(s ? s : "", carId, gameType, reversed ? 1 : 0, mirrored ? 1 : 0,
-                     numCpuCars);
+                     numCpuCars, numLaps);
     if (s) env->ReleaseStringUTFChars(levelDir, s);
 }
 
