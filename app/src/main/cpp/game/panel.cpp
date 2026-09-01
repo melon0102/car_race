@@ -335,8 +335,12 @@ void DrawControlPanel(void)
 	}
 
 // pickup
+// ANDROID_PORT: the whole pickup cluster (box + icon + count) sits 114 lower
+// than the 1999 layout (56 -> 170): mid-left instead of the top corner, where
+// it doubles as the touch fire button within thumb reach (touch_overlay.cpp's
+// fire zone covers this position)
 
-	DrawPanelSprite(4, 56, 64, 64, 190.0f / 256.0f, 157.0f / 256.0f, 64.0f / 256.0f, 64.0f / 256.0f, 0xe0ffffff);
+	DrawPanelSprite(4, 170, 64, 64, 190.0f / 256.0f, 157.0f / 256.0f, 64.0f / 256.0f, 64.0f / 256.0f, 0xe0ffffff);
 
 	if (PLR_LocalPlayer->PickupCycleSpeed)
 	{
@@ -363,13 +367,13 @@ void DrawControlPanel(void)
 
 		tu = (PickupUV[pickup * 2]) / 256.0f;
 		tv = (PickupUV[pickup * 2 + 1]) / 256.0f;
-		DrawPanelSprite(20, 72, 32, 32, tu, tv, 32.0f / 256.0f, 32.0f / 256.0f, 0xffffff - col);
+		DrawPanelSprite(20, 186, 32, 32, tu, tv, 32.0f / 256.0f, 32.0f / 256.0f, 0xffffff - col);
 
 		if (col)
 		{
 			tu = (PickupUV[pickup2 * 2]) / 256.0f;
 			tv = (PickupUV[pickup2 * 2 + 1]) / 256.0f;
-			DrawPanelSprite(20, 72, 32, 32, tu, tv, 32.0f / 256.0f, 32.0f / 256.0f, col);
+			DrawPanelSprite(20, 186, 32, 32, tu, tv, 32.0f / 256.0f, 32.0f / 256.0f, col);
 		}
 
 		ALPHA_SRC(D3DBLEND_SRCALPHA);
@@ -405,7 +409,7 @@ void DrawControlPanel(void)
 	     PLR_LocalPlayer->PickupType == PICKUP_WATERBOMB))
 	{
 		wsprintf(buf, "%d", (long)PLR_LocalPlayer->PickupNum);
-		DumpText(50, 108, 6, 8, 0xc0ffff00, buf);
+		DumpText(50, 222, 6, 8, 0xc0ffff00, buf);
 	}
 
 // split time?
