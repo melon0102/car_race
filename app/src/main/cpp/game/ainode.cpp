@@ -58,6 +58,13 @@ void LoadAiNodes(char *file)
 // alloc ram
 
 	fread(&AiNodeNum, sizeof(AiNodeNum), 1, fp);
+	// ANDROID_PORT: the shipped (retail-era) .fan header packs the node count
+	// in the LOW 16 bits (nhood1: 0x000A00D6 = count 214, high word 10 = a
+	// format tag). Read as a plain long that's 655574: the loader allocated
+	// ~78MB of phantom nodes filled with stale garbage records and never
+	// reached the AiStartNode / AiNodeTotalDist tail — the CPU AI was
+	// navigating a graph that was 99.97% junk.
+	AiNodeNum &= 0xffff;
 	if (!AiNodeNum) return;
 
 	AiNode = (AINODE*)malloc(sizeof(AINODE) * AiNodeNum);
