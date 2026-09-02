@@ -12,6 +12,7 @@
 #include "camera.h"
 #include "model.h"
 #include "main.h"
+#include "posnode.h"	// ANDROID_PORT: PosTotalDist for rival distances
 
 // globals
 
@@ -571,77 +572,184 @@ void DrawControlPanel(void)
 		DumpText(624 - 12 * (long)strlen(buf), 32, 12, 16, 0xc0ffffff, buf);
 	}
 
-// position
+// position + race HUD
+// ANDROID_PORT: cloned from the retail panel (Xbox/Src/panel.cpp): live
+// position ordinal top-left (white number, cyan suffix); nearest rivals
+// with signed distances in a bordered box bottom-left (retail drew them at
+// 122,396/416); after finishing, the big position sprite pops in at top
+// centre (font-page digit sprites, retail's shrink-and-fade), the race
+// results table lists the finish order with the local row pulsing alpha
+// (retail: sin(t/200)*64+192), and a continue hint shows at the bottom.
 
 	if (GameSettings.GameType != GAMETYPE_TRIAL)
 	{
-		// ANDROID_PORT: live race position (retail panel.cpp) — the 1999
-		// build drew a hardcoded "1". While racing, rank by race distance
-		// (laps done minus normalized distance to the line); once finished,
-		// the finish-table placing is final.
 		static const char *sOrdinal[] = {"st", "nd", "rd", "th"};
-		long pos;
+		static float sPosScale = 32.0f;
+		static char sWasFinished = 0;
+		PLAYER *ahead = NULL, *behind = NULL;
+		float d, localdist, aheadDist = 0.0f, behindDist = 0.0f;
+		long pos, n, row, alpha;
 
-		if (PLR_LocalPlayer->RaceFinishTime)
-		{
-			pos = PLR_LocalPlayer->RaceFinishPos + 1;
-		}
-		else
-		{
-			float localdist = (float)PLR_LocalPlayer->car.Laps - PLR_LocalPlayer->CarAI.FinishDistPanel;
+		localdist = (float)PLR_LocalPlayer->car.Laps - PLR_LocalPlayer->CarAI.FinishDistPanel
+		          - (float)PLR_LocalPlayer->CarAI.BackTracking;
 
-			pos = 1;
-			for (player = PLR_PlayerHead ; player ; player = player->next)
+		pos = 1;
+		for (player = PLR_PlayerHead ; player ; player = player->next)
+		{
+			if (player == PLR_LocalPlayer || player->type != PLAYER_CPU)
+				continue;
+			d = (float)player->car.Laps - player->CarAI.FinishDistPanel
+			  - (float)player->CarAI.BackTracking;
+			if (d > localdist)
 			{
-				if (player == PLR_LocalPlayer || player->type == PLAYER_GHOST || player->type == PLAYER_NONE)
-					continue;
-				if ((float)player->car.Laps - player->CarAI.FinishDistPanel > localdist)
-					pos++;
+				pos++;
+				if (!ahead || d - localdist < aheadDist) { ahead = player; aheadDist = d - localdist; }
+			}
+			else
+			{
+				if (!behind || localdist - d < behindDist) { behind = player; behindDist = localdist - d; }
+			}
+		}
+		if (PLR_LocalPlayer->RaceFinishTime)
+			pos = PLR_LocalPlayer->RaceFinishPos + 1;
+
+// ordinal top-left
+
+		wsprintf(buf, "%d", pos);
+		DumpText(16, 16, 24, 32, 0xc0ffffff, buf);
+		DumpText(16 + 26 * (long)strlen(buf), 16, 12, 16, 0xc000ffff,
+		         (char *)sOrdinal[(pos >= 1 && pos <= 3) ? pos - 1 : 3]);
+
+// nearest rivals box bottom-left
+
+		if (ahead || behind)
+		{
+			SET_TPAGE(-1);
+			DrawPanelSprite(12, 386, 236, 60, 0, 0, 0, 0, 0xb0181818);
+			DrawPanelSprite(12, 386, 236, 2, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(12, 444, 236, 2, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(12, 386, 2, 60, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(246, 386, 2, 60, 0, 0, 0, 0, 0xd04060ff);
+			SET_TPAGE(TPAGE_FONT);
+
+			if (ahead)
+			{
+				n = (long)(aheadDist * PosTotalDist / 200.0f);
+				if (n > 999) n = 999;
+				wsprintf(buf, "-%dm", n);
+				DumpText(96 - 12 * (long)strlen(buf), 392, 12, 16, 0xc000ff40, buf);
+				DumpText(100, 392, 12, 16, 0xc0ffffff, CarInfo[ahead->cartype].Name);
+			}
+			if (behind)
+			{
+				n = (long)(behindDist * PosTotalDist / 200.0f);
+				if (n > 999) n = 999;
+				wsprintf(buf, "+%dm", n);
+				DumpText(96 - 12 * (long)strlen(buf), 418, 12, 16, 0xc0ffff40, buf);
+				DumpText(100, 418, 12, 16, 0xc0ffffff, CarInfo[behind->cartype].Name);
 			}
 		}
 
-		wsprintf(buf, "%d", pos);
-		DumpText(16, 48, 24, 32, 0xc000ffff, buf);
-		DumpText(16 + 26 * (pos > 9 ? 2 : 1), 48, 12, 16, 0xc0ff4040,
-		         (char *)sOrdinal[(pos >= 1 && pos <= 3) ? pos - 1 : 3]);
-
-// finished: winner + results table over the rotate cam
+// finished: big position pop + results table + continue hint
 
 		if (PLR_LocalPlayer->RaceFinishTime)
 		{
-			long n, row = 0;
+			if (!sWasFinished)
+			{
+				sWasFinished = 1;
+				sPosScale = 300.0f;   // retail LocalRacePosScale start
+			}
 
-			DumpText(232, 120, 12, 16, 0xc0ffff00, PLR_LocalPlayer->RaceFinishPos == 0 ?
-			         (char *)"you win!" : (char *)"race finished");
+			sPosScale -= TimeStep * 500.0f;
+			if (sPosScale < 32.0f) sPosScale = 32.0f;
 
-			AllPlayersFinished = TRUE;
+			if (sPosScale < 300.0f - 256.0f) col = 0xff000000 | 0xffffff;
+			else col = ((long)(300.0f - sPosScale) << 24) | 0xffffff;
+
+			{
+				float xs = sPosScale, ys = sPosScale * 2.0f;
+				float xx = 320.0f - xs * 0.5f, yy = 36.0f;
+
+				if (pos >= 10)
+				{
+					xx -= xs * 0.5f;
+					DrawPanelSprite(xx, yy, xs, ys,
+					                ((float)(pos / 10) * 32.0f + 1.0f) / 256.0f, 129.0f / 256.0f,
+					                30.0f / 256.0f, 62.0f / 256.0f, col);
+					xx += xs;
+				}
+				DrawPanelSprite(xx, yy, xs, ys,
+				                (((pos % 10) % 8) * 32.0f + 1.0f) / 256.0f,
+				                (((pos % 10) / 8) * 64.0f + 129.0f) / 256.0f,
+				                30.0f / 256.0f, 62.0f / 256.0f, col);
+				xx += xs;
+				DumpText(xx - 2.0f, yy + ys * 0.08f, xs * 0.4f, xs * 0.55f, col,
+				         (char *)sOrdinal[(pos >= 1 && pos <= 3) ? pos - 1 : 3]);
+			}
+
+// results table (box + title + blinking local row)
+
+			row = 0;
+			for (n = 0 ; n < MAX_NUM_PLAYERS ; n++)
+				if (FinishTable[n].Time) row++;
+
+			SET_TPAGE(-1);
+			DrawPanelSprite(187, 150, 266, 48.0f + 20.0f * row, 0, 0, 0, 0, 0xb0181818);
+			DrawPanelSprite(187, 150, 266, 2, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(187, 196.0f + 20.0f * row, 266, 2, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(187, 150, 2, 48.0f + 20.0f * row, 0, 0, 0, 0, 0xd04060ff);
+			DrawPanelSprite(451, 150, 2, 48.0f + 20.0f * row, 0, 0, 0, 0, 0xd04060ff);
+			SET_TPAGE(TPAGE_FONT);
+
+			DumpText(248, 158, 12, 16, 0xc000ffff, "race results");
+
+			row = 0;
 			for (n = 0 ; n < MAX_NUM_PLAYERS ; n++)
 			{
+				char name[12];
+
 				if (!FinishTable[n].Time)
-					break;
+					continue;
 				player = FinishTable[n].Player;
 
-				wsprintf(buf, "%d%s %s %02d:%02d:%03d", n + 1,
-				         sOrdinal[(n < 3) ? n : 3],
-				         (player == PLR_LocalPlayer) ? "player" : CarInfo[player->cartype].Name,
-				         MINUTES(FinishTable[n].Time), SECONDS(FinishTable[n].Time), THOUSANDTHS(FinishTable[n].Time));
-				DumpText(180, 152 + row * 20, 8, 12,
-				         (player == PLR_LocalPlayer) ? 0xc0ffff00 : 0xc0ffffff, buf);
+				if (player == PLR_LocalPlayer)
+					alpha = (long)(sin((float)TIME2MS(TimerCurrent) / 200.0f) * 64.0f + 192.0f) << 24;
+				else
+					alpha = 0xe0000000;
+
+				wsprintf(buf, "%02d", n + 1);
+				DumpText(196, 190 + 20 * row, 12, 16, alpha | 0xffffff, buf);
+				memcpy(name, (player == PLR_LocalPlayer) ? "player" : CarInfo[player->cartype].Name, 11);
+				name[(player == PLR_LocalPlayer) ? 6 : 11] = 0;
+				DumpText(228, 190 + 20 * row, 12, 16, alpha | 0x00ffff, name);
+				wsprintf(buf, "%02d:%02d:%03d", MINUTES(FinishTable[n].Time), SECONDS(FinishTable[n].Time), THOUSANDTHS(FinishTable[n].Time));
+				DumpText(340, 190 + 20 * row, 12, 16, alpha | 0xffffff, buf);
 				row++;
 			}
 
+			DumpText(188, 452, 12, 16, 0xc0ff8000, "press back to continue");
+
+			AllPlayersFinished = TRUE;
 			for (player = PLR_PlayerHead ; player ; player = player->next)
 				if (player->type == PLAYER_LOCAL || player->type == PLAYER_CPU)
 					if (!player->RaceFinishTime)
 						AllPlayersFinished = FALSE;
 		}
+		else
+		{
+			sWasFinished = 0;
+		}
 	}
 
-// last lap
+// last lap (time-trial layout only — in race mode the lap counter owns
+// this corner, matching the reference: Lap + Best Lap)
 
-	DumpText(528, 16, 12, 16, 0xc000ffff, "last lap");
-	wsprintf(buf, "%02d:%02d:%03d", MINUTES(PLR_LocalPlayer->car.LastLapTime), SECONDS(PLR_LocalPlayer->car.LastLapTime), THOUSANDTHS(PLR_LocalPlayer->car.LastLapTime));
-	DumpText(516, 32, 12, 16, 0xc0ffffff, buf);
+	if (GameSettings.GameType == GAMETYPE_TRIAL)
+	{
+		DumpText(528, 16, 12, 16, 0xc000ffff, "last lap");
+		wsprintf(buf, "%02d:%02d:%03d", MINUTES(PLR_LocalPlayer->car.LastLapTime), SECONDS(PLR_LocalPlayer->car.LastLapTime), THOUSANDTHS(PLR_LocalPlayer->car.LastLapTime));
+		DumpText(516, 32, 12, 16, 0xc0ffffff, buf);
+	}
 
 // best lap
 
