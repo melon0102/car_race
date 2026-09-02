@@ -17,6 +17,7 @@
 #endif
 #include "main.h"
 #include "camera.h"
+#include "ainode.h"	// ANDROID_PORT: road-following start sweep
 #include "ctrlread.h"
 #include "object.h"
 #include "player.h"
@@ -379,18 +380,43 @@ void SetCameraNewFollow(CAMERA *camera, OBJECT *object, long followType)
 //
 ////////////////////////////////////////////////////////////////
 
-#define CAMERA_SWEEP_TIME Real(3)
+#define CAMERA_SWEEP_TIME  Real(3)
+#define SWEEP_MAX_POINTS   32
+#define SWEEP_STEP         Real(150)		// path sample spacing
+#define SWEEP_TOTAL        Real(3000)		// how far up the road the sweep starts
+#define SWEEP_HEIGHT_NEAR  Real(150)		// camera height above the road at the grid
+#define SWEEP_HEIGHT_FAR   Real(420)		// ... and at the far end (descending swoop)
+
+// ANDROID_PORT: the retail sweep is a straight line 3000 units out along the
+// grid's forward vector — on tracks where the road bends away from the grid
+// that line cuts through the side walls. This version samples the sweep path
+// along the AI node chain instead, so the camera flies DOWN THE ROAD toward
+// the grid, descending from SWEEP_HEIGHT_FAR to SWEEP_HEIGHT_NEAR.
+
+static VEC  sSweepPath[SWEEP_MAX_POINTS];	// [0] = behind the line ... [n-1] = far up the road
+static long sSweepCount;
 
 static void CameraSweepPos(CAMERA *camera)
 {
-	long i;
 	REAL t = camera->Timer / CAMERA_SWEEP_TIME;
+	REAL f;
+	long seg;
 
 	if (t > ONE) t = ONE;
 
 	CopyVec(&camera->WPos, &camera->OldWPos);
-	for (i = 0 ; i < 3 ; i++)
-		camera->WPos.v[i] = camera->PosOffset.v[i] + (camera->DestOffset.v[i] - camera->PosOffset.v[i]) * t;
+
+// walk the sampled road path from the far end back to the grid
+
+	f = (ONE - t) * (REAL)(sSweepCount - 1);
+	seg = (long)f;
+	if (seg >= sSweepCount - 1) seg = sSweepCount - 2;
+	if (seg < 0) seg = 0;
+	f -= (REAL)seg;
+
+	camera->WPos.v[X] = sSweepPath[seg].v[X] + (sSweepPath[seg + 1].v[X] - sSweepPath[seg].v[X]) * f;
+	camera->WPos.v[Y] = sSweepPath[seg].v[Y] + (sSweepPath[seg + 1].v[Y] - sSweepPath[seg].v[Y]) * f;
+	camera->WPos.v[Z] = sSweepPath[seg].v[Z] + (sSweepPath[seg + 1].v[Z] - sSweepPath[seg].v[Z]) * f;
 
 	if (TimeStep > Real(0.0001))
 	{
@@ -412,6 +438,9 @@ void SetCameraSweep(CAMERA *camera, OBJECT *object)
 {
 	VEC pos0, pos1;
 	MAT mat;
+	AINODE *node, *next;
+	REAL total, height;
+	long i;
 
 	camera->Type = CAM_SWEEP;
 	camera->SubType = 0;
@@ -425,22 +454,67 @@ void SetCameraSweep(CAMERA *camera, OBJECT *object)
 	camera->Zoom = FALSE;
 	camera->ZoomMod = LENS_DIST_MOD;
 
-// sweep start / end: from far in front of the grid to just behind the line
+// path point 0: just behind the start line, low over the road
 
 	GetCarGrid(0, &pos0, &mat);
 	GetCarGrid(1, &pos1, &mat);
 
 	VecPlusEqVec(&pos0, &pos1);
 	VecMulScalar(&pos0, HALF);
-	pos0.v[Y] -= Real(150);
 
-	VecPlusScalarVec(&pos0, Real(3000), &mat.mv[L], &camera->PosOffset);
-	VecPlusScalarVec(&pos0, Real(-300), &mat.mv[L], &camera->DestOffset);
+	VecPlusScalarVec(&pos0, Real(-300), &mat.mv[L], &sSweepPath[0]);
+	sSweepPath[0].v[Y] -= SWEEP_HEIGHT_NEAR;
+	sSweepCount = 1;
+
+// then sample the road ahead along the AI node chain (Next links are the
+// authored racing direction), rising toward the far end
+
+	node = NULL;
+	if (AiNodeNum)
+	{
+		// nearest node to the grid midpoint
+		REAL best = Real(1e30);
+		for (i = 0 ; i < AiNodeNum ; i++)
+		{
+			VEC d;
+			SubVector(&AiNode[i].Centre, &pos0, &d);
+			REAL d2 = VecDotVec(&d, &d);
+			if (d2 < best) { best = d2; node = &AiNode[i]; }
+		}
+	}
+
+	total = ZERO;
+	while (node && sSweepCount < SWEEP_MAX_POINTS && total < SWEEP_TOTAL)
+	{
+		next = node->Next[0];
+		if (!next || next == node)
+			break;
+
+		VEC d;
+		SubVector(&next->Centre, &node->Centre, &d);
+		total += VecLen(&d);
+
+		height = SWEEP_HEIGHT_NEAR + (SWEEP_HEIGHT_FAR - SWEEP_HEIGHT_NEAR) * (total / SWEEP_TOTAL);
+		CopyVec(&next->Centre, &sSweepPath[sSweepCount]);
+		sSweepPath[sSweepCount].v[Y] -= height;
+		sSweepCount++;
+
+		node = next;
+	}
+
+// fallback: no nodes — the old straight line
+
+	if (sSweepCount < 2)
+	{
+		VecPlusScalarVec(&pos0, Real(3000), &mat.mv[L], &sSweepPath[1]);
+		sSweepPath[1].v[Y] -= SWEEP_HEIGHT_FAR;
+		sSweepCount = 2;
+	}
 
 	CopyVec(&CamFollowData[CAM_FOLLOW_BEHIND].LookOffset, &camera->LookOffset);
 	CopyVec(&CamFollowData[CAM_FOLLOW_BEHIND].LookOffset, &camera->OldLookOffset);
 
-	CopyVec(&camera->PosOffset, &camera->WPos);
+	CopyVec(&sSweepPath[sSweepCount - 1], &camera->WPos);
 	CopyVec(&camera->WPos, &camera->OldWPos);
 	SetVecZero(&camera->Vel);
 }
