@@ -174,8 +174,17 @@ extern "C" int Revolt_Boot(const char *dataDir)
 // one iteration of the main loop (called per Android frame)
 extern "C" int Revolt_Frame(void)
 {
+    static long sFrames = 0;
+
     if (!gBooted || QuitGame) return FALSE;
     if (Event) Event();
+
+    // ANDROID_PORT: temporary loop heartbeat for stall diagnosis
+    if ((++sFrames % 100) == 0) {
+        __android_log_print(ANDROID_LOG_INFO, "revolt-loop",
+                            "frame %ld countdown %lu racetime %lu",
+                            sFrames, (unsigned long)CountdownTime, (unsigned long)TotalRaceTime);
+    }
     return !QuitGame;
 }
 

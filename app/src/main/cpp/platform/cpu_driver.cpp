@@ -58,6 +58,48 @@
 #include "gameloop.h"
 #include "weapon.h"
 #include "Wheel.h"
+#include "Units.h"
+#include "posnode.h"
+#include "main.h"
+
+// ---------------------------------------------------------------- retail data
+// AI node priority types (rvsource/Xbox/Src/ainode.h enum order — the retail
+// .fan files carry these in each node's Priority byte; the authored slow-down
+// zones are how the retail AI brakes for corners)
+
+#define AIN_TYPE_SLOWDOWN_25        4
+#define AIN_TYPE_TITLESCR_SLOWDOWN  7
+#define AIN_TYPE_OFFTHROTTLE        13
+#define AIN_TYPE_OFFTHROTTLEPETROL  14
+#define AIN_TYPE_SLOWDOWN_15        16
+#define AIN_TYPE_SLOWDOWN_20        17
+#define AIN_TYPE_SLOWDOWN_30        18
+
+// retail MEDIUM-difficulty catch-up (ai_car.cpp gCatchUp[DIFFICULTY_MEDIUM]):
+// cars far behind 1st get up to +4mph of top speed, cars far ahead lose up
+// to 2mph — the subtle rubber band that keeps the pack together
+
+#define CATCHUP_LEN_SPEEDUP   (200.0f * 7.0f)
+#define CATCHUP_LEN_SLOWDOWN  (200.0f * 10.0f)
+static const REAL kCatchUpSpeedUp[4]  = { MPH2OGU_SPEED * 1, MPH2OGU_SPEED * 2, MPH2OGU_SPEED * 3, MPH2OGU_SPEED * 4 };
+static const REAL kCatchUpSlowDown[3] = { -MPH2OGU_SPEED * 0, -MPH2OGU_SPEED * 1, -MPH2OGU_SPEED * 2 };
+
+// retail under/oversteer response (ai_car.cpp gCarUnderOverSteerTable's
+// generic row — the per-car table was disabled in retail too): countersteer
+// into a slide and lift the throttle, the single most human-looking habit
+
+#define UOS_UNDER_THRESHOLD  150.0f
+#define UOS_UNDER_RANGE      1500.0f
+#define UOS_UNDER_FRONT      450.0f
+#define UOS_UNDER_REAR       335.0f
+#define UOS_UNDER_MAX        0.95f
+#define UOS_OVER_THRESHOLD   300.0f
+#define UOS_OVER_RANGE       1000.0f
+#define UOS_OVER_MAX         1.0f
+#define UOS_OVER_ACC_THRESH  50.0f
+#define UOS_OVER_ACC_RANGE   500.0f
+
+#define OVERTAKE_MIN_TIME    4.0f     // retail OVERTAKE_MIN_TIME
 
 // per-player state, indexed by player slot
 static REAL sStuckTime[MAX_NUM_PLAYERS];
@@ -65,6 +107,11 @@ static REAL sReverseTime[MAX_NUM_PLAYERS];
 static REAL sAirTime[MAX_NUM_PLAYERS];
 static REAL sWrongWayTime[MAX_NUM_PLAYERS];
 static REAL sDirSign[MAX_NUM_PLAYERS];   // 0 = uninitialised, +1/-1 = race-direction sense
+static char sOvertake[MAX_NUM_PLAYERS];      // retail bOvertake — on the overtaking line?
+static REAL sOvertakeTime[MAX_NUM_PLAYERS];  // retail timeOvertake
+static REAL sCurLine[MAX_NUM_PLAYERS];       // retail curRacingLine — blended line bias 0..1
+static long sAiNodeIdx[MAX_NUM_PLAYERS];     // this driver's own current AINODE (CarAI.FinishDistNode
+static char sAiNodeInit[MAX_NUM_PLAYERS];    // belongs to the posnode chain — a different graph)
 
 // Race-forward successor of a node. Retail can just take Next[route] because
 // its data guarantees link orientation; the 1999 node graph does not, so pick
@@ -106,6 +153,29 @@ static void RacingLinePoint(AINODE *node, REAL bias, VEC *out)
     out->v[Z] = node->Node[0].Pos.v[Z] + (node->Node[1].Pos.v[Z] - node->Node[0].Pos.v[Z]) * t;
 }
 
+// racing line with the retail overtaking-line blend: the overtaking line is
+// the authored line mirrored to the other side of the track centre
+// (rvsource/Xbox/Src/ainode.cpp computes it exactly this way when the node
+// data doesn't carry one), and curRacingLine slides between them at retail's
+// 0.1/s so the car drifts across the road rather than snapping
+static void LinePoint(AINODE *node, REAL bias, REAL overtakeBlend, VEC *out)
+{
+    REAL rl = node->RacingLine;
+    REAL ol = (rl <= 0.5f) ? rl + (1.0f - rl) * 0.5f : rl * 0.5f;
+    REAL t = rl + (ol - rl) * overtakeBlend + bias;
+    if (t < 0.05f) t = 0.05f;
+    if (t > 0.95f) t = 0.95f;
+    out->v[X] = node->Node[0].Pos.v[X] + (node->Node[1].Pos.v[X] - node->Node[0].Pos.v[X]) * t;
+    out->v[Y] = node->Node[0].Pos.v[Y] + (node->Node[1].Pos.v[Y] - node->Node[0].Pos.v[Y]) * t;
+    out->v[Z] = node->Node[0].Pos.v[Z] + (node->Node[1].Pos.v[Z] - node->Node[0].Pos.v[Z]) * t;
+}
+
+// posnode race progress in track units (bigger = further round the race)
+static REAL RaceProgress(PLAYER *p)
+{
+    return ((REAL)p->car.Laps - p->CarAI.FinishDistPanel - (REAL)p->CarAI.BackTracking) * PosTotalDist;
+}
+
 void CRD_CpuInput(CTRL *Control)
 {
     // the handler only receives the CTRL, which is embedded in the PLAYER
@@ -136,12 +206,19 @@ void CRD_CpuInput(CTRL *Control)
 
     // ---------------------------------------------------------------- recovery
 
-    // flipped / airborne too long -> right the car (idigital edge fires once)
+    // flipped / airborne too long -> right the car (idigital edge fires once);
+    // while genuinely airborne, retail's CAI_S_IN_THE_AIR holds the wheels
+    // straight at full throttle instead of steering at nothing
     if (car->NWheelFloorContacts == 0) {
         sAirTime[slot] += TimeStep;
         if (sAirTime[slot] > 2.5f) {
             sAirTime[slot] = 0.0f;
             Control->digital = CTRL_RESET;
+            return;
+        }
+        if (car->NWheelsInContact < 3) {
+            Control->dx = 0;
+            Control->dy = -CTRL_RANGE_MAX;
             return;
         }
     } else {
@@ -157,13 +234,106 @@ void CRD_CpuInput(CTRL *Control)
         return;
     }
 
+    // ------------------------------------------------- opponents + overtaking
+    // (retail CAI_State_Race: within 500 race-units of the car in front, hop
+    // onto the opposite line to theirs and hold it for OVERTAKE_MIN_TIME; the
+    // close-range nudge below handles the actual wheel-to-wheel moment)
+
+    REAL avoid = 0.0f;
+    int blocked = 0;
+    {
+        PLAYER *other, *front = NULL;
+        REAL myProg = RaceProgress(player), frontGap = 0.0f;
+
+        for (other = PLR_PlayerHead; other; other = other->next) {
+            if (other == player || !other->car.Body) continue;
+            if (other->type != PLAYER_CPU && other->type != PLAYER_LOCAL) continue;
+
+            VEC od;
+            SubVector(&other->car.Body->Centre.Pos, &car->Body->Centre.Pos, &od);
+            REAL ofwd = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[L]);
+            if (ofwd >= 0.0f && ofwd <= 300.0f) {
+                REAL oside = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[R]);
+                if (oside <= 90.0f && oside >= -90.0f) {
+                    avoid += ((oside >= 0.0f) ? -1.0f : 1.0f) * (1.0f - ofwd / 300.0f);
+                    if (ofwd < 140.0f) blocked = 1;
+                }
+            }
+
+            REAL gap = RaceProgress(other) - myProg;
+            if (gap > 0.0f && (!front || gap < frontGap)) {
+                front = other;
+                frontGap = gap;
+            }
+        }
+        if (avoid >  1.0f) avoid =  1.0f;
+        if (avoid < -1.0f) avoid = -1.0f;
+
+        if (front && frontGap < 500.0f) {
+            long fslot = (long)(front - Players);
+            sOvertake[slot] = (fslot >= 0 && fslot < MAX_NUM_PLAYERS) ? !sOvertake[fslot] : 1;
+            sOvertakeTime[slot] = OVERTAKE_MIN_TIME;
+        } else if (sOvertakeTime[slot] > 0.0f) {
+            sOvertakeTime[slot] -= TimeStep;
+        } else {
+            sOvertake[slot] = 0;
+        }
+
+        // slide between the lines at retail's 0.1/s
+        REAL dstLine = sOvertake[slot] ? 1.0f : 0.0f;
+        if (sCurLine[slot] < dstLine) {
+            sCurLine[slot] += TimeStep * 0.1f;
+            if (sCurLine[slot] > dstLine) sCurLine[slot] = dstLine;
+        } else if (sCurLine[slot] > dstLine) {
+            sCurLine[slot] -= TimeStep * 0.1f;
+            if (sCurLine[slot] < dstLine) sCurLine[slot] = dstLine;
+        }
+    }
+
     // ------------------------------------------ target on the racing line
     // (AIN_FindNodeAhead, ported)
 
-    long idx = player->CarAI.FinishDistNode;
-    if (idx < 0 || idx >= AiNodeNum)
+    // track our own current AI node: seed from the nearest node, then walk
+    // one link per frame toward whichever neighbour is closer (the same
+    // scheme retail's node tracking and our posnode port use)
+    if (!sAiNodeInit[slot]) {
+        // (AIN_NearestNode is a commented-out stub in the 1999 tree — it
+        // always returns NULL. Seed with a direct scan instead.)
+        REAL best = 1e30f;
+        long bi = -1;
+        for (long ni = 0; ni < AiNodeNum; ni++) {
+            VEC dv;
+            SubVector(&AiNode[ni].Centre, &car->Body->Centre.Pos, &dv);
+            REAL d2 = VecDotVec(&dv, &dv);
+            if (d2 < best) { best = d2; bi = ni; }
+        }
+        if (bi < 0)
+            return;
+        sAiNodeIdx[slot] = bi;
+        sAiNodeInit[slot] = 1;
+    }
+    if (sAiNodeIdx[slot] < 0 || sAiNodeIdx[slot] >= AiNodeNum)
         return;
-    AINODE *node = &AiNode[idx];
+    AINODE *node = &AiNode[sAiNodeIdx[slot]];
+
+    {
+        VEC dv;
+        SubVector(&node->Centre, &car->Body->Centre.Pos, &dv);
+        REAL best = VecDotVec(&dv, &dv);
+        AINODE *bestNode = node;
+
+        for (long li = 0; li < MAX_AINODE_LINKS; li++) {
+            AINODE *cand[2] = { node->Next[li], node->Prev[li] };
+            for (long ci = 0; ci < 2; ci++) {
+                if (!cand[ci]) continue;
+                SubVector(&cand[ci]->Centre, &car->Body->Centre.Pos, &dv);
+                REAL d2 = VecDotVec(&dv, &dv);
+                if (d2 < best) { best = d2; bestNode = cand[ci]; }
+            }
+        }
+        node = bestNode;
+        sAiNodeIdx[slot] = (long)(node - AiNode);
+    }
 
     // retail look-ahead: 600 + 0.1 * speed while racing
     REAL lookAhead = (600.0f + speedCur * 0.1f) * lookScale;
@@ -206,8 +376,8 @@ void CRD_CpuInput(CTRL *Control)
     if (t > 1.0f) t = 1.0f;
 
     VEC c0, c1, destPos;
-    RacingLinePoint(node, lineBias, &c0);
-    RacingLinePoint(succ, lineBias, &c1);
+    LinePoint(node, lineBias, sCurLine[slot], &c0);
+    LinePoint(succ, lineBias, sCurLine[slot], &c1);
     destPos.v[X] = c0.v[X] + (c1.v[X] - c0.v[X]) * t;
     destPos.v[Y] = c0.v[Y] + (c1.v[Y] - c0.v[Y]) * t;
     destPos.v[Z] = c0.v[Z] + (c1.v[Z] - c0.v[Z]) * t;
@@ -239,28 +409,6 @@ void CRD_CpuInput(CTRL *Control)
     REAL side = VecDotVec(&rVec, &carFwd);
     REAL cosAngle = VecDotVec(&fVec, &carFwd);
     REAL absCos = (cosAngle < 0) ? -cosAngle : cosAngle;
-
-    // ------------------------------------------------------------ avoidance
-    // retail overtakes by blending toward an OvertakingLine (absent from the
-    // 1999 node data), so nudge the aim off-line around a blocker instead
-    REAL avoid = 0.0f;
-    int blocked = 0;
-    {
-        PLAYER *other;
-        for (other = PLR_PlayerHead; other; other = other->next) {
-            if (other == player || !other->car.Body) continue;
-            VEC od;
-            SubVector(&other->car.Body->Centre.Pos, &car->Body->Centre.Pos, &od);
-            REAL ofwd = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[L]);
-            if (ofwd < 0.0f || ofwd > 300.0f) continue;
-            REAL oside = VecDotVec(&od, &car->Body->Centre.WMatrix.mv[R]);
-            if (oside > 90.0f || oside < -90.0f) continue;
-            avoid += ((oside >= 0.0f) ? -1.0f : 1.0f) * (1.0f - ofwd / 300.0f);
-            if (ofwd < 140.0f) blocked = 1;
-        }
-        if (avoid >  1.0f) avoid =  1.0f;
-        if (avoid < -1.0f) avoid = -1.0f;
-    }
 
     // ------------------------------------------------------------- steering
     // (CAI_ProcessCarSteering, ported)
@@ -301,6 +449,123 @@ void CRD_CpuInput(CTRL *Control)
         Control->dy = -CTRL_RANGE_MAX;   // flat out
     }
 
+    // ------------------------------------------- authored slow-down zones
+    // (retail CAI_ProcessCall: track designers marked braking sections with
+    // node Priority types — the retail AI's actual corner braking. The 1999
+    // shim ran flat out through all of them.)
+
+    switch (node->Priority) {
+        case AIN_TYPE_SLOWDOWN_15:
+            if (speedCur > MPH2OGU_SPEED * 15) Control->dy = CTRL_RANGE_MAX;
+            break;
+        case AIN_TYPE_SLOWDOWN_20:
+            if (speedCur > MPH2OGU_SPEED * 20) Control->dy = CTRL_RANGE_MAX;
+            break;
+        case AIN_TYPE_SLOWDOWN_25:
+            if (speedCur > MPH2OGU_SPEED * 25) Control->dy = CTRL_RANGE_MAX;
+            break;
+        case AIN_TYPE_SLOWDOWN_30:
+            if (speedCur > MPH2OGU_SPEED * 30) Control->dy = CTRL_RANGE_MAX;
+            break;
+        case AIN_TYPE_TITLESCR_SLOWDOWN:
+            if (speedCur > car->TopSpeed * 0.25f) Control->dy = CTRL_RANGE_MAX;
+            break;
+        case AIN_TYPE_OFFTHROTTLEPETROL:
+        case AIN_TYPE_OFFTHROTTLE:
+            if (speedCur > MPH2OGU_SPEED * 20) Control->dy = 0;
+            else Control->dy = (signed char)(-CTRL_RANGE_MAX / 2);
+            break;
+    }
+
+    // -------------------------------------- under/oversteer correction
+    // (retail CAI_ProcessUnderOverSteer: compare the sideways velocity at the
+    // front and rear axles — a sliding rear means countersteer toward the
+    // slide and lift; a ploughing front means unwind the lock and lift)
+
+    if (car->NWheelFloorContacts >= 3) {
+        VEC pos, fVel, rVel;
+        REAL frontDot, rearDot, uos;
+
+        VecMinusVec(&car->Wheel[FL].CentrePos, &car->Body->Centre.Pos, &pos);
+        BodyPointVel(car->Body, &pos, &fVel);
+        frontDot = VecDotVec(&car->Wheel[FL].Axes.mv[R], &fVel);
+
+        VecMinusVec(&car->Wheel[BL].CentrePos, &car->Body->Centre.Pos, &pos);
+        BodyPointVel(car->Body, &pos, &rVel);
+        rearDot = VecDotVec(&car->Wheel[BL].Axes.mv[R], &rVel);
+
+        REAL absFront = (frontDot < 0) ? -frontDot : frontDot;
+        REAL absRear  = (rearDot  < 0) ? -rearDot  : rearDot;
+
+        if ((frontDot >= 0) == (rearDot >= 0)) {
+            uos = absRear - absFront - UOS_OVER_THRESHOLD;                  // oversteer?
+            if (uos > 0.0f) {
+                uos /= UOS_OVER_RANGE;
+                if (uos > UOS_OVER_MAX) uos = UOS_OVER_MAX;
+            } else {
+                uos = absFront + absRear - UOS_UNDER_THRESHOLD;             // understeer?
+                uos = (uos > 0.0f) ? -(uos / UOS_UNDER_RANGE) : 0.0f;
+                if (uos < -UOS_UNDER_MAX) uos = -UOS_UNDER_MAX;
+            }
+        } else {
+            uos = absFront + absRear - UOS_OVER_THRESHOLD;                  // rear snapping out
+            if (uos > 0.0f) {
+                uos /= UOS_OVER_RANGE;
+                if (uos > UOS_OVER_MAX) uos = UOS_OVER_MAX;
+            } else {
+                uos = 0.0f;
+            }
+        }
+
+        if (uos < 0.0f) {
+            // understeer: add more lock and lift unless both axles wash out
+            long add = (long)(-uos * CTRL_RANGE_MAX);
+            long dx = Control->dx + ((Control->dx >= 0) ? add : -add);
+            if (dx >  CTRL_RANGE_MAX) dx =  CTRL_RANGE_MAX;
+            if (dx < -CTRL_RANGE_MAX) dx = -CTRL_RANGE_MAX;
+            Control->dx = (signed char)dx;
+            if (absFront <= UOS_UNDER_FRONT || absRear <= UOS_UNDER_REAR)
+                Control->dy = (signed char)(-CTRL_RANGE_MAX * (1.0f + uos));
+        } else if (uos > 0.0f) {
+            // oversteer: countersteer with the slide
+            long dx = (long)((car->SteerAngle + ((frontDot < 0.0f) ? -uos : uos)) * CTRL_RANGE_MAX);
+            if (dx >  CTRL_RANGE_MAX) dx =  CTRL_RANGE_MAX;
+            if (dx < -CTRL_RANGE_MAX) dx = -CTRL_RANGE_MAX;
+            Control->dx = (signed char)dx;
+
+            REAL v = (absFront > absRear) ? absFront : absRear;
+            v -= UOS_OVER_ACC_THRESH;
+            if (v > 0.0f) {
+                v /= UOS_OVER_ACC_RANGE;
+                if (v > 1.5f) v = 1.5f;
+                Control->dy = (signed char)((1.0f - v) * -CTRL_RANGE_MAX);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------- catch-up
+    // (retail CAI_CatchUp + control.cpp consumer, MEDIUM difficulty: top
+    // speed drifts a few mph either way with the gap to the human's car)
+
+    if (Players[0].car.Body && player != &Players[0]) {
+        REAL gap = RaceProgress(&Players[0]) - RaceProgress(player);
+        REAL mod = 0.0f;
+
+        if (gap > CATCHUP_LEN_SPEEDUP) {
+            long step = (long)(gap / CATCHUP_LEN_SPEEDUP);
+            if (step > 3) step = 3;
+            mod = kCatchUpSpeedUp[step];
+        } else if (gap < -CATCHUP_LEN_SLOWDOWN) {
+            long step = (long)(-gap / CATCHUP_LEN_SLOWDOWN);
+            if (step > 3) step = 3;
+            mod = kCatchUpSlowDown[step - 1 < 0 ? 0 : (step - 1 > 2 ? 2 : step - 1)];
+        }
+
+        car->TopSpeed = car->DefaultTopSpeed + mod;
+        if (car->DefaultTopSpeed < Players[0].car.DefaultTopSpeed && mod > 0.0f)
+            car->TopSpeed = Players[0].car.DefaultTopSpeed + mod;
+    }
+
     // -------------------------------------------------------------- weapons
     // rockets wait for a lock, everything else fires when held; FIRE is pulsed
     // so the edge-triggered input registers repeatedly for multi-shot packs
@@ -313,21 +578,12 @@ void CRD_CpuInput(CTRL *Control)
             Control->digital |= CTRL_FIRE;
     }
 
-    // ------------------------------------------- direction self-calibration
-    // if the game's own wrong-way detector says we're persistently racing
-    // backwards at speed, our race-direction sense is inverted — flip it
-    if (player->CarAI.WrongWay && fwdSpeed > 200.0f) {
-        sWrongWayTime[slot] += TimeStep;
-        if (sWrongWayTime[slot] > 1.5f) {
-            sWrongWayTime[slot] = 0.0f;
-            sDirSign[slot] = -sDirSign[slot];
-            __android_log_print(4 /*INFO*/, "revolt-ai",
-                                "cpu slot %ld: wrong way — flipping direction sense to %.0f",
-                                slot, (double)sDirSign[slot]);
-        }
-    } else {
-        sWrongWayTime[slot] = 0.0f;
-    }
+    // (the old "direction sense" auto-flip is gone: it existed to cope with
+    // the corrupt node graph the broken .fan count produced. With the loader
+    // fixed, the Next[] links are the authored racing direction, as retail
+    // assumes — flipping on wrong-way readings only destabilised the cars.)
+    (void)sWrongWayTime;
+    (void)fwdSpeed;
 
     // stuck: throttle on but barely moving -> back out
     if (absSpeed < 48.0f && Control->dy < 0) {
@@ -338,6 +594,24 @@ void CRD_CpuInput(CTRL *Control)
         }
     } else {
         sStuckTime[slot] = 0.0f;
+    }
+
+    // -------------------------------------------------- control quantization
+    // (retail CAI_QuantizeControls: round the sticks to steps of 8 so the AI's
+    // inputs look like a human thumb on a pad, not a servo)
+
+    {
+        long q = Control->dx;
+        q = (q >= 0) ? ((q + 4) & ~7) : -((-q + 4) & ~7);
+        if (q >  CTRL_RANGE_MAX) q =  CTRL_RANGE_MAX;
+        if (q < -CTRL_RANGE_MAX) q = -CTRL_RANGE_MAX;
+        Control->dx = (signed char)q;
+
+        q = Control->dy;
+        q = (q >= 0) ? ((q + 4) & ~7) : -((-q + 4) & ~7);
+        if (q >  CTRL_RANGE_MAX) q =  CTRL_RANGE_MAX;
+        if (q < -CTRL_RANGE_MAX) q = -CTRL_RANGE_MAX;
+        Control->dy = (signed char)q;
     }
 
     // heartbeat to logcat (~every 2s at 60fps)
