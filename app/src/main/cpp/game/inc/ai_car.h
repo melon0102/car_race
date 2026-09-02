@@ -101,6 +101,9 @@ typedef struct _CAR_AI
 	long			FinishDistNode;				// current 'finish dist' node
 	REAL	 		FinishDist;					// distance to finish line
 	REAL	 		FinishDistPanel;			// distance to finish line for control panel
+	long			BackTracking;				// ANDROID_PORT: retail field (Xbox/Src/ai_car.h) — true while behind the start line
+	long			PreLap;						// ANDROID_PORT: retail field — true until the first line crossing
+	long			LapCompleted;				// ANDROID_PORT: posnode lap event, latched for the timing loop
 } CAR_AI;
 
 //

@@ -16,6 +16,7 @@ set(GAME_SOURCES
     ${GAME_DIR}/Util.cpp
     ${GAME_DIR}/Debug.cpp
     # physics core
+    ${GAME_DIR}/posnode.cpp
     ${GAME_DIR}/timing.cpp
     ${GAME_DIR}/NewColl.cpp
     ${GAME_DIR}/Body.cpp

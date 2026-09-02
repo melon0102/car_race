@@ -30,6 +30,7 @@
 #include "ai.h"
 #include "ai_init.h"
 #include "ai_car.h"
+#include "posnode.h"	// ANDROID_PORT: PosStartNode
 
 //
 // Static variables
@@ -86,9 +87,12 @@ void CAI_InitCarAI(PLAYER *Player, long Skill)
 	Player->CarAI.ResetCnt = 0;
 	Player->CarAI.StuckCnt = 0;
 
-	Player->CarAI.FinishDistNode = AiStartNode;
+	Player->CarAI.FinishDistNode = PosStartNode;	// ANDROID_PORT: posnode chain (retail)
 	Player->CarAI.FinishDist = 0.0f;
 	Player->CarAI.FinishDistPanel = 0.0f;
+	Player->CarAI.BackTracking = TRUE;	// ANDROID_PORT: the grid sits behind the start line (retail ai_init.cpp)
+	Player->CarAI.PreLap = TRUE;
+	Player->CarAI.LapCompleted = FALSE;
 }
 
 //--------------------------------------------------------------------------------------------------------------------------

@@ -28,6 +28,7 @@
 #include "ctrlread.h"
 #include "object.h"
 #include "ainode.h"
+#include "posnode.h"	// ANDROID_PORT
 #include "move.h"
 #include "player.h"
 #ifndef _PSX
@@ -157,7 +158,12 @@ void AI_CarAiHandler(OBJECT *obj)
 	obj->player->ValidRailCamNode = -1;
 #ifndef _PSX
 	CAI_CarHelper(obj->player);
-	UpdateCarFinishDist(obj->player);
+	// ANDROID_PORT: racing cars use the retail position-node system
+	// (posnode.cpp) for finish distance / wrong way / lap crossing — the
+	// 1999 AI-node version stays for the ghost and remote handlers only.
+	// The lap event is latched for the timing loop to consume.
+	if (UpdateCarPosNodeDist(obj->player, NULL))
+		obj->player->CarAI.LapCompleted = TRUE;
 #endif
 #ifdef _PC
 	CarAccTimings(&obj->player->car);

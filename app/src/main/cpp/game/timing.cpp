@@ -190,9 +190,15 @@ void UpdateRaceTimers(void)
 #endif
 
 // end of lap?
+// ANDROID_PORT: zones still advance every frame (track-dir sequencing and
+// the posnode out-of-zone check need them), but the lap itself is now the
+// retail posnode line-crossing event, latched by the AI handler
 
-			if (UpdateCarAiZone(player))
+			UpdateCarAiZone(player);
+
+			if (player->CarAI.LapCompleted)
 			{
+				player->CarAI.LapCompleted = FALSE;
 
 // yep, trigger end split time
 
@@ -293,11 +299,14 @@ void UpdateRaceTimers(void)
 		case PLAYER_CPU:
 
 // ANDROID_PORT: the 1999 build never counted CPU laps, so opponents could
-// never finish. Count them the same way (start-line crossing via the AI
-// zone wrap) and feed the retail finish table when they complete the race.
+// never finish. Zones advance every frame; the lap is the retail posnode
+// line-crossing event latched by the AI handler.
 
-			if (UpdateCarAiZone(player))
+			UpdateCarAiZone(player);
+
+			if (player->CarAI.LapCompleted)
 			{
+				player->CarAI.LapCompleted = FALSE;
 				car->Laps++;
 
 				if (GameSettings.GameType != GAMETYPE_TRIAL && !player->RaceFinishTime &&

@@ -24,6 +24,7 @@ extern "C" void DbgPrintf(const char *fmt, ...);   // ANDROID_PORT
 #include "particle.h"
 #include "texture.h"
 #include "panel.h"	// ANDROID_PORT: LoadCountdownModels / FreeCountdownModels
+#include "posnode.h"	// ANDROID_PORT
 #include "model.h"
 #include "aerial.h"
 #include "NewColl.h"
@@ -275,6 +276,7 @@ void LEV_EndLevel(void)
 	// free level models
 	FreeLevelModels();
 	FreeCountdownModels();	// ANDROID_PORT
+	FreePosNodes();			// ANDROID_PORT
 
 	// Kill player system
 	PLR_KillAllPlayers();
@@ -391,6 +393,9 @@ static void s_LoadTrackData(void)
 	// load ai nodes (must be after ai zones)
 	LoadAiNodes(GetLevelFilename("fan", FILENAME_MAKE_BODY | FILENAME_GAME_SETTINGS));
 	ZoneAiNodes();
+
+	// load position nodes (retail race-position system — ANDROID_PORT)
+	LoadPosNodes(GetLevelFilename("pan", FILENAME_MAKE_BODY | FILENAME_GAME_SETTINGS));
 
 	// load triggers
 	LoadTriggers(GetLevelFilename("tri", FILENAME_MAKE_BODY | FILENAME_GAME_SETTINGS));
