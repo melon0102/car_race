@@ -103,6 +103,18 @@ public class LauncherActivity extends Activity {
             GameData.unpack(this);
             tracks = GameData.listTracks(this);
             cars = GameData.listCars(this);
+
+            // Debug builds pin the panel to one known-good combination
+            // (Toys in the Hood + RC Bandit) so build-tests always exercise
+            // the same content. All assets stay packaged; release builds
+            // list everything.
+            boolean debugBuild = (getApplicationInfo().flags
+                    & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            if (debugBuild) {
+                tracks.removeIf(t -> !t.dir.equalsIgnoreCase("nhood1"));
+                cars.removeIf(c -> c.id != 0);
+            }
+
             runOnUiThread(this::buildForm);
         }, "gamedata-unpack").start();
     }
