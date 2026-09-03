@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 public final class GameData {
 
     private static final String TAG = "revolt-java";
-    static final String DATA_VERSION = "4";   // v4: font1 = retail font.bmp
+    static final String DATA_VERSION = "5";   // v5: frontend + wild_west1 levels removed (flag content); stale unpacks now wiped
 
     private GameData() {}
 
@@ -41,6 +41,11 @@ public final class GameData {
         if (marker.exists()) {
             return;
         }
+        // stale (older-version) unpack: wipe it, or files removed from the
+        // assets — like deleted levels — would linger on updated installs
+        if (root.exists()) {
+            deleteRecursive(root);
+        }
         Log.i(TAG, "unpacking game data to " + root);
         long start = System.currentTimeMillis();
         try {
@@ -51,6 +56,16 @@ public final class GameData {
             Log.i(TAG, "game data unpacked in " + (System.currentTimeMillis() - start) + " ms");
         } catch (Exception e) {
             Log.e(TAG, "game data unpack failed", e);
+        }
+    }
+
+    private static void deleteRecursive(File f) {
+        File[] children = f.listFiles();
+        if (children != null) {
+            for (File c : children) deleteRecursive(c);
+        }
+        if (!f.delete()) {
+            Log.w(TAG, "could not delete " + f);
         }
     }
 
