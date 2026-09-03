@@ -135,7 +135,7 @@ public class LauncherActivity extends Activity {
         modeRace.setTextColor(TEXT);
         mode.addView(modeTrial);
         mode.addView(modeRace);
-        if (prefs.getInt(EXTRA_GAME_TYPE, 0) == 1) modeRace.setChecked(true);
+        if (prefs.getInt(EXTRA_GAME_TYPE, 1) == 1) modeRace.setChecked(true);   // default: Race vs CPU
         else modeTrial.setChecked(true);
         addPanel(mode);
 
