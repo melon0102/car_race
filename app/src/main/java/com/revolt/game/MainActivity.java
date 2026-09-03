@@ -93,7 +93,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         nativeConfigure(
                 getIntent().getStringExtra(LauncherActivity.EXTRA_LEVEL_DIR),
                 getIntent().getIntExtra(LauncherActivity.EXTRA_CAR_ID, 0),
-                getIntent().getIntExtra(LauncherActivity.EXTRA_GAME_TYPE, 1),
+                getIntent().getIntExtra(LauncherActivity.EXTRA_GAME_TYPE, 0),
                 getIntent().getBooleanExtra(LauncherActivity.EXTRA_REVERSED, false),
                 getIntent().getBooleanExtra(LauncherActivity.EXTRA_MIRRORED, false),
                 getIntent().getIntExtra(LauncherActivity.EXTRA_NUM_CPUS, 7),
